@@ -19,18 +19,24 @@
 
     <h2>Available Endpoints:</h2>
     <div class="endpoint">
-        <strong>GET /login</strong> - Initiate OAuth authentication flow
+        <strong>GET {login_route}</strong> - Initiate OAuth authentication flow
     </div>
     <div class="endpoint">
-        <strong>GET /callback</strong> - OAuth callback handler
+        <strong>GET {callback_route}</strong> - OAuth callback handler
     </div>
     <div class="endpoint">
-        <strong>GET /health</strong> - Health check endpoint
+        <strong>GET {health_route}</strong> - Health check endpoint
+    </div>
+    <div class="endpoint">
+        <strong>GET {metrics_route}</strong> - Prometheus metrics endpoint
+    </div>
+    <div class="endpoint">
+        <strong>POST {mcp_route}</strong> - MCP protocol endpoint
     </div>
 
     <h2>Getting Started:</h2>
     <ol>
-        <li>Visit <a href="/login"><code>/login</code></a> to authenticate with Gmail</li>
+        <li>Visit <a href="{login_route}"><code>{login_route}</code></a> to authenticate with Gmail</li>
         <li>Complete the OAuth flow in your browser</li>
         <li>Your Gmail MCP Server is now ready to use!</li>
     </ol>

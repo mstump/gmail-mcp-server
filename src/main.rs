@@ -120,6 +120,10 @@ async fn main() -> Result<()> {
             csrf_tokens: csrf_tokens.clone(),
             metrics: oauth_metrics.clone(),
             login_route: login_route.to_string(),
+            callback_route: "/callback".to_string(),
+            health_route: "/health".to_string(),
+            metrics_route: metrics_route.to_string(),
+            mcp_route: mcp_route.to_string(),
         });
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.port))
@@ -148,10 +152,34 @@ struct AppState {
     csrf_tokens: Arc<RwLock<std::collections::HashMap<String, String>>>,
     metrics: Arc<metrics::OAuthMetrics>,
     login_route: String,
+    callback_route: String,
+    health_route: String,
+    metrics_route: String,
+    mcp_route: String,
 }
 
-async fn root_handler() -> Html<&'static str> {
-    Html(include_str!("../templates/index.html"))
+/// Render a template with placeholder replacements
+fn render_template(template: &str, replacements: &[(&str, &str)]) -> String {
+    let mut result = template.to_string();
+    for (placeholder, value) in replacements {
+        result = result.replace(placeholder, value);
+    }
+    result
+}
+
+async fn root_handler(State(state): State<AppState>) -> Html<String> {
+    let template = include_str!("../templates/index.html");
+    let html = render_template(
+        template,
+        &[
+            ("{login_route}", &state.login_route),
+            ("{callback_route}", &state.callback_route),
+            ("{health_route}", &state.health_route),
+            ("{metrics_route}", &state.metrics_route),
+            ("{mcp_route}", &state.mcp_route),
+        ],
+    );
+    Html(html)
 }
 
 async fn login_handler(State(state): State<AppState>) -> Result<Redirect, StatusCode> {
@@ -169,27 +197,15 @@ async fn callback_handler(
     Query(params): Query<CallbackQuery>,
 ) -> Result<Html<String>, StatusCode> {
     if let Some(error) = params.error {
-        return Ok(Html(format!(
-            r#"
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Gmail MCP Server - Authorization Error</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }}
-        .error {{ color: red; font-size: 18px; }}
-    </style>
-</head>
-<body>
-    <h1>Authorization Error</h1>
-    <p class="error">❌ {}</p>
-    <p>Please try again by visiting <a href="{}">{}</a></p>
-</body>
-</html>"#,
-            error,
-            state.login_route,
-            state.login_route
-        )));
+        let template = include_str!("../templates/error.html");
+        let html = render_template(
+            template,
+            &[
+                ("{error_message}", &error),
+                ("{login_route}", &state.login_route),
+            ],
+        );
+        return Ok(Html(html));
     }
 
     let code = params.code.ok_or(StatusCode::BAD_REQUEST)?;
@@ -199,22 +215,8 @@ async fn callback_handler(
             state.gmail_server.set_authenticated(true).await;
             // Update metrics with the new token
             state.metrics.update_token_metrics(Some(&token));
-            Ok(Html(r#"
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Gmail MCP Server - Authorization Complete</title>
-    <style>
-        body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
-        .success { color: green; font-size: 18px; }
-    </style>
-</head>
-<body>
-    <h1>Authorization Successful!</h1>
-    <p class="success">✅ You can now close this browser window and return to your terminal.</p>
-    <p>Your Gmail MCP Server is now configured.</p>
-</body>
-</html>"#.to_string()))
+            let template = include_str!("../templates/success.html");
+            Ok(Html(template.to_string()))
         }
         Err(e) => {
             error!("Failed to exchange authorization code: {}", e);
@@ -245,3 +247,107 @@ async fn metrics_handler(State(state): State<AppState>) -> Result<Response<Strin
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_render_template() {
+        let template = "Hello {name}, welcome to {place}!";
+        let result = render_template(
+            template,
+            &[
+                ("{name}", "Alice"),
+                ("{place}", "Wonderland"),
+            ],
+        );
+        assert_eq!(result, "Hello Alice, welcome to Wonderland!");
+    }
+
+    #[test]
+    fn test_render_template_with_multiple_replacements() {
+        let template = "{a} {b} {a}";
+        let result = render_template(
+            template,
+            &[
+                ("{a}", "foo"),
+                ("{b}", "bar"),
+            ],
+        );
+        assert_eq!(result, "foo bar foo");
+    }
+
+    #[test]
+    fn test_render_template_no_replacements() {
+        let template = "No placeholders here";
+        let result = render_template(template, &[]);
+        assert_eq!(result, "No placeholders here");
+    }
+
+    #[test]
+    fn test_render_template_error_page() {
+        let template = include_str!("../templates/error.html");
+        let result = render_template(
+            template,
+            &[
+                ("{error_message}", "access_denied"),
+                ("{login_route}", "/login"),
+            ],
+        );
+        assert!(result.contains("access_denied"));
+        assert!(result.contains("/login"));
+        assert!(result.contains("Authorization Error"));
+    }
+
+    #[test]
+    fn test_render_template_success_page() {
+        let template = include_str!("../templates/success.html");
+        let result = render_template(template, &[]);
+        assert!(result.contains("Authorization Successful!"));
+        assert!(result.contains("Gmail MCP Server is now configured"));
+    }
+
+    #[test]
+    fn test_render_template_index_page() {
+        let template = include_str!("../templates/index.html");
+        let result = render_template(
+            template,
+            &[
+                ("{login_route}", "/login"),
+                ("{callback_route}", "/callback"),
+                ("{health_route}", "/health"),
+                ("{metrics_route}", "/metrics"),
+                ("{mcp_route}", "/mcp"),
+            ],
+        );
+        assert!(result.contains("GET /login"));
+        assert!(result.contains("GET /callback"));
+        assert!(result.contains("GET /health"));
+        assert!(result.contains("GET /metrics"));
+        assert!(result.contains("POST /mcp"));
+        assert!(result.contains("href=\"/login\""));
+        assert!(result.contains("<code>/login</code>"));
+    }
+
+    #[test]
+    fn test_render_template_index_page_with_custom_routes() {
+        let template = include_str!("../templates/index.html");
+        let result = render_template(
+            template,
+            &[
+                ("{login_route}", "/auth/login"),
+                ("{callback_route}", "/auth/callback"),
+                ("{health_route}", "/status/health"),
+                ("{metrics_route}", "/prometheus/metrics"),
+                ("{mcp_route}", "/api/mcp"),
+            ],
+        );
+        assert!(result.contains("GET /auth/login"));
+        assert!(result.contains("GET /auth/callback"));
+        assert!(result.contains("GET /status/health"));
+        assert!(result.contains("GET /prometheus/metrics"));
+        assert!(result.contains("POST /api/mcp"));
+        assert!(result.contains("href=\"/auth/login\""));
+        assert!(result.contains("<code>/auth/login</code>"));
+    }
+}
