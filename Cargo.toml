@@ -1,0 +1,39 @@
+[package]
+name = "gmail-mcp-server"
+version = "1.0.0"
+edition = "2024"
+authors = ["Gmail MCP Server Contributors"]
+description = "Gmail MCP Server - Rust implementation"
+license = "MIT"
+
+[dependencies]
+rmcp = { version = "0.8.5", features = ["server", "transport-streamable-http-server", "macros", "schemars"] }
+gmail = "0.18.0"
+oauth2 = "5.0"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.22"
+markdownify = "0.2"
+dotenv = "0.15"
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+open = "5.0"
+clap = { version = "4.5", features = ["derive", "env"] }
+anyhow = "1.0"
+thiserror = "1.0"
+futures = "0.3"
+url = "2.5"
+urlencoding = "2.1"
+reqwest = { version = "0.12", features = ["json"] }
+async-trait = "0.1"
+tokio-stream = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+prometheus = "0.13"
+
+[dev-dependencies]
+tokio-test = "0.4"
+mockito = "1.2"
+
