@@ -8,6 +8,7 @@ pub fn decode_email_content(data: &str) -> Result<String> {
 }
 
 /// Check if content contains HTML tags
+#[allow(dead_code)]
 pub fn is_html_content(content: &str) -> bool {
     let content = content.trim();
     if content.is_empty() {

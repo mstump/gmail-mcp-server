@@ -43,6 +43,7 @@ impl Token {
 
 pub struct OAuthManager {
     client: BasicClient<EndpointSet, oauth2::EndpointNotSet, oauth2::EndpointNotSet, oauth2::EndpointNotSet, EndpointSet>,
+    #[allow(dead_code)]
     config: Config,
     token: Arc<RwLock<Option<Token>>>,
 }

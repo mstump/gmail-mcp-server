@@ -10,6 +10,7 @@ pub struct GmailServer {
     oauth_manager: Arc<OAuthManager>,
     user_id: String,
     authenticated: Arc<RwLock<bool>>,
+    #[allow(dead_code)]
     http_client: Arc<Client>,
 }
 
@@ -45,6 +46,7 @@ impl GmailServer {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn oauth_manager(&self) -> Arc<OAuthManager> {
         self.oauth_manager.clone()
     }
@@ -66,6 +68,7 @@ impl GmailServer {
         Ok(token.access_token)
     }
 
+    #[allow(dead_code)]
     pub fn http_client(&self) -> Arc<Client> {
         self.http_client.clone()
     }
