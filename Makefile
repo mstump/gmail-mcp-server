@@ -54,11 +54,12 @@ test:
 	@cargo test --verbose
 
 # Build Docker image
-# Creates a Docker image tagged as $(BINARY_NAME):latest
+# Creates a Docker image tagged as ghcr.io/mstump/gmail-mcp-server:<short-git-sha>
 # Requires Docker to be installed and running
 docker:
 	@echo "Building Docker image..."
-	@docker build -t $(BINARY_NAME):latest .
+	@SHORT_SHA=$$(git rev-parse --short=7 HEAD); \
+	docker build -t ghcr.io/mstump/gmail-mcp-server:$$SHORT_SHA .
 
 # Run all targets: clean, deps, test, build, and docker
 # Executes all build steps in sequence for a complete build pipeline

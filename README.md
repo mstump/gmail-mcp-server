@@ -446,29 +446,6 @@ Send an existing draft email.
 
 ## Development
 
-### Project Structure
-
-```plain
-gmail-mcp-server/
-├── src/
-│   ├── main.rs          # Main entry point and HTTP server setup
-│   ├── config.rs        # Configuration management
-│   ├── server.rs        # MCP server implementation
-│   ├── tools.rs         # Gmail API tool implementations
-│   ├── gmail.rs         # Gmail server wrapper
-│   ├── oauth.rs         # OAuth 2.0 authentication
-│   ├── extract.rs       # Attachment text extraction
-│   ├── email.rs         # Email content decoding
-│   ├── utils.rs         # Utility functions
-│   └── metrics.rs       # Prometheus metrics
-├── templates/
-│   └── index.html       # Server information page
-├── Cargo.toml           # Rust dependencies
-├── Dockerfile           # Docker build configuration
-├── Makefile             # Build automation
-└── README.md            # This file
-```
-
 ### Running Tests
 
 ```bash
