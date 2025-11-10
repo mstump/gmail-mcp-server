@@ -1,5 +1,5 @@
 use anyhow::Result;
-use base64::{engine::general_purpose::URL_SAFE, Engine};
+use base64::{Engine, engine::general_purpose::URL_SAFE};
 
 /// Decode base64url-encoded email content
 pub fn decode_email_content(data: &str) -> Result<String> {
@@ -37,4 +37,3 @@ mod tests {
         assert!(!is_html_content(""));
     }
 }
-

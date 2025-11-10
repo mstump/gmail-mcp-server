@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use base64::{engine::general_purpose::URL_SAFE, Engine};
-use serde_json::{json, Value};
+use base64::{Engine, engine::general_purpose::URL_SAFE};
+use serde_json::{Value, json};
 use std::path::PathBuf;
 use tracing::error;
 
@@ -117,7 +117,10 @@ pub async fn extract_attachment_by_filename(
     let user_id = gmail_server.user_id();
 
     // Get the message
-    let url = format!("{}/users/{}/messages/{}", GMAIL_API_BASE, user_id, message_id);
+    let url = format!(
+        "{}/users/{}/messages/{}",
+        GMAIL_API_BASE, user_id, message_id
+    );
     let response = client
         .get(&url)
         .send()
@@ -146,7 +149,9 @@ pub async fn extract_attachment_by_filename(
             if let Some(part_filename) = part["filename"].as_str() {
                 if part_filename == filename {
                     if let Some(att_id) = part["body"]["attachmentId"].as_str() {
-                        let mime = part["mimeType"].as_str().unwrap_or("application/octet-stream");
+                        let mime = part["mimeType"]
+                            .as_str()
+                            .unwrap_or("application/octet-stream");
                         return Some((att_id.to_string(), mime.to_string()));
                     }
                 }
@@ -186,7 +191,10 @@ pub async fn extract_attachment_by_filename(
         ));
     }
 
-    let att_data: Value = att_response.json().await.context("Failed to parse attachment")?;
+    let att_data: Value = att_response
+        .json()
+        .await
+        .context("Failed to parse attachment")?;
     let encoded_data = att_data["data"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("Invalid attachment data"))?;
@@ -258,7 +266,10 @@ pub async fn fetch_email_bodies(
                 .ok_or_else(|| anyhow::anyhow!("Message missing ID"))?;
 
             // Get full message details
-            let msg_url = format!("{}/users/{}/messages/{}", GMAIL_API_BASE, user_id, message_id);
+            let msg_url = format!(
+                "{}/users/{}/messages/{}",
+                GMAIL_API_BASE, user_id, message_id
+            );
             let msg_response = client
                 .get(&msg_url)
                 .send()
@@ -279,9 +290,7 @@ pub async fn fetch_email_bodies(
 
             // Extract headers
             let empty_vec = Vec::new();
-            let headers = msg["payload"]["headers"]
-                .as_array()
-                .unwrap_or(&empty_vec);
+            let headers = msg["payload"]["headers"].as_array().unwrap_or(&empty_vec);
 
             let mut from = None;
             let mut subject = None;
@@ -329,7 +338,10 @@ pub async fn download_attachment(
     let user_id = gmail_server.user_id();
 
     // Get the message
-    let url = format!("{}/users/{}/messages/{}", GMAIL_API_BASE, user_id, message_id);
+    let url = format!(
+        "{}/users/{}/messages/{}",
+        GMAIL_API_BASE, user_id, message_id
+    );
     let response = client
         .get(&url)
         .send()
@@ -358,7 +370,9 @@ pub async fn download_attachment(
             if let Some(part_filename) = part["filename"].as_str() {
                 if part_filename == filename {
                     if let Some(att_id) = part["body"]["attachmentId"].as_str() {
-                        let mime = part["mimeType"].as_str().unwrap_or("application/octet-stream");
+                        let mime = part["mimeType"]
+                            .as_str()
+                            .unwrap_or("application/octet-stream");
                         return Some((att_id.to_string(), mime.to_string()));
                     }
                 }
@@ -397,7 +411,10 @@ pub async fn download_attachment(
         ));
     }
 
-    let att_data: Value = att_response.json().await.context("Failed to parse attachment")?;
+    let att_data: Value = att_response
+        .json()
+        .await
+        .context("Failed to parse attachment")?;
     let encoded_data = att_data["data"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("Invalid attachment data"))?;
@@ -415,14 +432,12 @@ pub async fn download_attachment(
     };
 
     // Ensure directory exists
-    std::fs::create_dir_all(&download_path)
-        .context("Failed to create download directory")?;
+    std::fs::create_dir_all(&download_path).context("Failed to create download directory")?;
 
     let file_path = download_path.join(filename);
 
     // Write file
-    std::fs::write(&file_path, &decoded_data)
-        .context("Failed to write attachment file")?;
+    std::fs::write(&file_path, &decoded_data).context("Failed to write attachment file")?;
 
     Ok(json!({
         "filename": filename,
@@ -446,7 +461,10 @@ pub async fn forward_email(
     let user_id = gmail_server.user_id();
 
     // Get the original message
-    let url = format!("{}/users/{}/messages/{}", GMAIL_API_BASE, user_id, message_id);
+    let url = format!(
+        "{}/users/{}/messages/{}",
+        GMAIL_API_BASE, user_id, message_id
+    );
     let response = client
         .get(&url)
         .send()
@@ -535,7 +553,10 @@ pub async fn forward_email(
         ));
     }
 
-    let result: Value = send_response.json().await.context("Failed to parse response")?;
+    let result: Value = send_response
+        .json()
+        .await
+        .context("Failed to parse response")?;
     Ok(result)
 }
 
@@ -630,4 +651,3 @@ fn extract_message_body(message: &Value) -> Result<String> {
 
     Err(anyhow::anyhow!("Could not extract message body"))
 }
-

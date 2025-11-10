@@ -1,8 +1,7 @@
 use anyhow::{Context, Result};
 use oauth2::{
-    basic::BasicClient,
-    AuthUrl, AuthorizationCode, ClientId, ClientSecret, RedirectUrl, Scope, TokenResponse, TokenUrl,
-    EndpointSet,
+    AuthUrl, AuthorizationCode, ClientId, ClientSecret, EndpointSet, RedirectUrl, Scope,
+    TokenResponse, TokenUrl, basic::BasicClient,
 };
 use reqwest;
 use serde::{Deserialize, Serialize};
@@ -24,13 +23,12 @@ pub struct Token {
 
 impl Token {
     pub fn from_token_response<TR: TokenResponse>(token: &TR) -> Self {
-        let expires_at = token.expires_in()
-            .and_then(|expires_in| {
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .ok()
-                    .map(|now| now.as_secs() + expires_in.as_secs())
-            });
+        let expires_at = token.expires_in().and_then(|expires_in| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .map(|now| now.as_secs() + expires_in.as_secs())
+        });
 
         Self {
             access_token: token.access_token().secret().clone(),
@@ -42,7 +40,13 @@ impl Token {
 }
 
 pub struct OAuthManager {
-    client: BasicClient<EndpointSet, oauth2::EndpointNotSet, oauth2::EndpointNotSet, oauth2::EndpointNotSet, EndpointSet>,
+    client: BasicClient<
+        EndpointSet,
+        oauth2::EndpointNotSet,
+        oauth2::EndpointNotSet,
+        oauth2::EndpointNotSet,
+        EndpointSet,
+    >,
     #[allow(dead_code)]
     config: Config,
     token: Arc<RwLock<Option<Token>>>,
@@ -51,19 +55,23 @@ pub struct OAuthManager {
 impl OAuthManager {
     pub fn new(config: Config) -> Result<Self> {
         let client_id = ClientId::new(
-            config.gmail_client_id.clone()
-                .ok_or_else(|| anyhow::anyhow!("GMAIL_CLIENT_ID not set"))?
+            config
+                .gmail_client_id
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("GMAIL_CLIENT_ID not set"))?,
         );
         let client_secret = ClientSecret::new(
-            config.gmail_client_secret.clone()
-                .ok_or_else(|| anyhow::anyhow!("GMAIL_CLIENT_SECRET not set"))?
+            config
+                .gmail_client_secret
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("GMAIL_CLIENT_SECRET not set"))?,
         );
         let auth_url = AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".to_string())
             .context("Invalid authorization URL")?;
         let token_url = TokenUrl::new("https://oauth2.googleapis.com/token".to_string())
             .context("Invalid token URL")?;
-        let redirect_url = RedirectUrl::new(config.oauth_redirect_url())
-            .context("Invalid redirect URL")?;
+        let redirect_url =
+            RedirectUrl::new(config.oauth_redirect_url()).context("Invalid redirect URL")?;
 
         let client = BasicClient::new(client_id)
             .set_client_secret(client_secret)
@@ -86,10 +94,8 @@ impl OAuthManager {
             return Ok(None);
         }
 
-        let content = std::fs::read_to_string(&token_file)
-            .context("Failed to read token file")?;
-        let token: Token = serde_json::from_str(&content)
-            .context("Failed to parse token file")?;
+        let content = std::fs::read_to_string(&token_file).context("Failed to read token file")?;
+        let token: Token = serde_json::from_str(&content).context("Failed to parse token file")?;
 
         // Validate token by checking expiration
         if let Some(expires_at) = token.expires_at {
@@ -109,18 +115,21 @@ impl OAuthManager {
     pub async fn save_token(&self, token: &Token) -> Result<()> {
         let token_file = utils::get_app_file_path(&self.config, "token.json")
             .context("Failed to get token file path")?;
-        let content = serde_json::to_string_pretty(token)
-            .context("Failed to serialize token")?;
-        std::fs::write(&token_file, content)
-            .context("Failed to write token file")?;
+        let content = serde_json::to_string_pretty(token).context("Failed to serialize token")?;
+        std::fs::write(&token_file, content).context("Failed to write token file")?;
         Ok(())
     }
 
     pub fn get_authorization_url(&self) -> Result<(Url, String)> {
-        let (auth_url, csrf_token) = self.client
+        let (auth_url, csrf_token) = self
+            .client
             .authorize_url(|| oauth2::CsrfToken::new_random())
-            .add_scope(Scope::new("https://www.googleapis.com/auth/gmail.readonly".to_string()))
-            .add_scope(Scope::new("https://www.googleapis.com/auth/gmail.compose".to_string()))
+            .add_scope(Scope::new(
+                "https://www.googleapis.com/auth/gmail.readonly".to_string(),
+            ))
+            .add_scope(Scope::new(
+                "https://www.googleapis.com/auth/gmail.compose".to_string(),
+            ))
             .url();
 
         Ok((auth_url, csrf_token.secret().clone()))
@@ -129,7 +138,8 @@ impl OAuthManager {
     pub async fn exchange_code(&self, code: &str) -> Result<Token> {
         let code = AuthorizationCode::new(code.to_string());
         let http_client = reqwest::Client::new();
-        let token_result = self.client
+        let token_result = self
+            .client
             .exchange_code(code)
             .request_async(&http_client)
             .await
@@ -150,4 +160,3 @@ impl OAuthManager {
         *self.token.write().await = Some(token);
     }
 }
-

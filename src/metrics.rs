@@ -16,26 +16,20 @@ impl OAuthMetrics {
     pub fn new() -> Result<Self, prometheus::Error> {
         let registry = Registry::new();
 
-        let token_exists = Gauge::with_opts(
-            prometheus::Opts::new(
-                "gmail_oauth_token_exists",
-                "Whether an OAuth token exists (1 if exists, 0 if not)",
-            ),
-        )?;
+        let token_exists = Gauge::with_opts(prometheus::Opts::new(
+            "gmail_oauth_token_exists",
+            "Whether an OAuth token exists (1 if exists, 0 if not)",
+        ))?;
 
-        let expires_in = Gauge::with_opts(
-            prometheus::Opts::new(
-                "gmail_oauth_token_expires_in",
-                "Seconds until the OAuth token expires",
-            ),
-        )?;
+        let expires_in = Gauge::with_opts(prometheus::Opts::new(
+            "gmail_oauth_token_expires_in",
+            "Seconds until the OAuth token expires",
+        ))?;
 
-        let expires_at = Gauge::with_opts(
-            prometheus::Opts::new(
-                "gmail_oauth_token_expires_at",
-                "Unix timestamp when the OAuth token expires",
-            ),
-        )?;
+        let expires_at = Gauge::with_opts(prometheus::Opts::new(
+            "gmail_oauth_token_expires_at",
+            "Unix timestamp when the OAuth token expires",
+        ))?;
 
         registry.register(Box::new(token_exists.clone()))?;
         registry.register(Box::new(expires_in.clone()))?;
@@ -159,4 +153,3 @@ mod tests {
         assert!(output.contains("gmail_oauth_token_expires_at"));
     }
 }
-

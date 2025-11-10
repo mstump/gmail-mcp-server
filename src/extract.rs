@@ -28,10 +28,8 @@ pub fn extract_text_from_bytes(data: &[u8], mime_type: &str, filename: &str) -> 
 fn extract_pdf_text(data: &[u8]) -> Result<String> {
     use std::io::Write;
     let temp_file = std::env::temp_dir().join(format!("pdf_extract_{}.pdf", std::process::id()));
-    let mut file = std::fs::File::create(&temp_file)
-        .context("Failed to create temp file")?;
-    file.write_all(data)
-        .context("Failed to write temp file")?;
+    let mut file = std::fs::File::create(&temp_file).context("Failed to create temp file")?;
+    file.write_all(data).context("Failed to write temp file")?;
     drop(file);
 
     let markdown = markdownify::pdf::pdf_convert(&temp_file, None)
@@ -47,10 +45,8 @@ fn extract_pdf_text(data: &[u8]) -> Result<String> {
 fn extract_docx_text(data: &[u8]) -> Result<String> {
     use std::io::Write;
     let temp_file = std::env::temp_dir().join(format!("docx_extract_{}.docx", std::process::id()));
-    let mut file = std::fs::File::create(&temp_file)
-        .context("Failed to create temp file")?;
-    file.write_all(data)
-        .context("Failed to write temp file")?;
+    let mut file = std::fs::File::create(&temp_file).context("Failed to create temp file")?;
+    file.write_all(data).context("Failed to write temp file")?;
     drop(file);
 
     let markdown = markdownify::docx::docx_convert(&temp_file)
@@ -76,4 +72,3 @@ pub fn is_extractable_document(mime_type: &str, filename: &str) -> bool {
         }
     }
 }
-

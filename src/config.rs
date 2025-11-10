@@ -40,7 +40,8 @@ pub struct Config {
 
 impl Config {
     pub fn oauth_redirect_url(&self) -> String {
-        self.oauth_redirect_url.clone()
+        self.oauth_redirect_url
+            .clone()
             .unwrap_or_else(|| format!("http://localhost:{}/callback", self.port))
     }
 
@@ -106,7 +107,10 @@ mod tests {
             login_route: "/login".to_string(),
             app_data_dir: None,
         };
-        assert_eq!(config.oauth_redirect_url(), "http://localhost:3000/callback");
+        assert_eq!(
+            config.oauth_redirect_url(),
+            "http://localhost:3000/callback"
+        );
     }
 
     #[test]
@@ -121,7 +125,10 @@ mod tests {
             login_route: "/login".to_string(),
             app_data_dir: None,
         };
-        assert_eq!(config.oauth_redirect_url(), "http://localhost:9000/callback");
+        assert_eq!(
+            config.oauth_redirect_url(),
+            "http://localhost:9000/callback"
+        );
     }
 
     #[test]
@@ -247,4 +254,3 @@ mod tests {
         assert!(dir.to_string_lossy().contains("gmail-mcp-server_data"));
     }
 }
-

@@ -1,9 +1,6 @@
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
-    handler::server::{
-        router::tool::ToolRouter,
-        wrapper::Parameters,
-    },
+    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::*,
     schemars,
     service::RequestContext,
@@ -327,4 +324,3 @@ impl ServerHandler for GmailMcpServer {
         Ok(self.get_info())
     }
 }
-

@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use anyhow::{Context, Result};
+use std::path::PathBuf;
 
 use crate::config::Config;
 
@@ -9,8 +9,12 @@ pub fn get_app_data_dir(config: &Config) -> Result<PathBuf> {
     let app_data_dir = config.app_data_dir();
 
     // Ensure the directory exists
-    std::fs::create_dir_all(&app_data_dir)
-        .with_context(|| format!("Could not create app data directory at {}", app_data_dir.display()))?;
+    std::fs::create_dir_all(&app_data_dir).with_context(|| {
+        format!(
+            "Could not create app data directory at {}",
+            app_data_dir.display()
+        )
+    })?;
 
     Ok(app_data_dir)
 }

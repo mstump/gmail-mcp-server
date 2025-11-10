@@ -10,11 +10,11 @@ mod utils;
 
 use anyhow::{Context, Result};
 use axum::{
+    Router,
     extract::{Query, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{Html, IntoResponse, Redirect, Response},
     routing::get,
-    Router,
 };
 use clap::Parser;
 use config::Config;
@@ -25,7 +25,7 @@ use rmcp::transport::streamable_http_server::{
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, error};
+use tracing::{error, info};
 
 #[derive(Deserialize)]
 struct CallbackQuery {
@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"))
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
 
@@ -52,27 +52,49 @@ async fn main() -> Result<()> {
 
     // Validate required environment variables
     if config.gmail_client_id.is_none() {
-        return Err(anyhow::anyhow!("GMAIL_CLIENT_ID environment variable not set"));
+        return Err(anyhow::anyhow!(
+            "GMAIL_CLIENT_ID environment variable not set"
+        ));
     }
     if config.gmail_client_secret.is_none() {
-        return Err(anyhow::anyhow!("GMAIL_CLIENT_SECRET environment variable not set"));
+        return Err(anyhow::anyhow!(
+            "GMAIL_CLIENT_SECRET environment variable not set"
+        ));
     }
 
-    let app_data_dir = utils::get_app_data_dir(&config)
-        .context("Failed to create app data directory")?;
-    let token_file = utils::get_app_file_path(&config, "token.json")
-        .context("Failed to get token file path")?;
+    let app_data_dir =
+        utils::get_app_data_dir(&config).context("Failed to create app data directory")?;
+    let token_file =
+        utils::get_app_file_path(&config, "token.json").context("Failed to get token file path")?;
     info!("📁 App data directory: {}", app_data_dir.display());
     info!("🔑 Token file: {}", token_file.display());
 
     // Initialize Gmail server without OAuth (lazy authentication)
     let gmail_server = Arc::new(gmail::GmailServer::new(&config)?);
 
-    info!("Starting Gmail MCP Server in HTTP mode on port {}...", config.port);
-    info!("✅ Server will run persistently at http://localhost:{}", config.port);
-    info!("   Visit http://localhost:{}{} to authenticate", config.port, config.login_route());
-    info!("   MCP endpoint: http://localhost:{}{}", config.port, config.mcp_route());
-    info!("   Metrics endpoint: http://localhost:{}{}", config.port, config.metrics_route());
+    info!(
+        "Starting Gmail MCP Server in HTTP mode on port {}...",
+        config.port
+    );
+    info!(
+        "✅ Server will run persistently at http://localhost:{}",
+        config.port
+    );
+    info!(
+        "   Visit http://localhost:{}{} to authenticate",
+        config.port,
+        config.login_route()
+    );
+    info!(
+        "   MCP endpoint: http://localhost:{}{}",
+        config.port,
+        config.mcp_route()
+    );
+    info!(
+        "   Metrics endpoint: http://localhost:{}{}",
+        config.port,
+        config.metrics_route()
+    );
     info!("   (Use Ctrl+C to stop the server)");
 
     // Create OAuth manager
@@ -130,11 +152,22 @@ async fn main() -> Result<()> {
         .await
         .context("Failed to bind to port")?;
 
-    info!("🌐 HTTP server starting on http://localhost:{}", config.port);
+    info!(
+        "🌐 HTTP server starting on http://localhost:{}",
+        config.port
+    );
     info!("📖 View server info: http://localhost:{}", config.port);
     info!("🔍 Health check: http://localhost:{}/health", config.port);
-    info!("📊 Metrics endpoint: http://localhost:{}{}", config.port, config.metrics_route());
-    info!("🔌 MCP endpoint: http://localhost:{}{}", config.port, config.mcp_route());
+    info!(
+        "📊 Metrics endpoint: http://localhost:{}{}",
+        config.port,
+        config.metrics_route()
+    );
+    info!(
+        "🔌 MCP endpoint: http://localhost:{}{}",
+        config.port,
+        config.mcp_route()
+    );
 
     axum::serve(listener, app)
         .with_graceful_shutdown(async {
@@ -183,11 +216,17 @@ async fn root_handler(State(state): State<AppState>) -> Html<String> {
 }
 
 async fn login_handler(State(state): State<AppState>) -> Result<Redirect, StatusCode> {
-    let (auth_url, csrf_token) = state.oauth_manager.get_authorization_url()
+    let (auth_url, csrf_token) = state
+        .oauth_manager
+        .get_authorization_url()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Store CSRF token
-    state.csrf_tokens.write().await.insert(csrf_token.clone(), csrf_token);
+    state
+        .csrf_tokens
+        .write()
+        .await
+        .insert(csrf_token.clone(), csrf_token);
 
     Ok(Redirect::to(auth_url.as_str()))
 }
@@ -254,26 +293,14 @@ mod tests {
     #[test]
     fn test_render_template() {
         let template = "Hello {name}, welcome to {place}!";
-        let result = render_template(
-            template,
-            &[
-                ("{name}", "Alice"),
-                ("{place}", "Wonderland"),
-            ],
-        );
+        let result = render_template(template, &[("{name}", "Alice"), ("{place}", "Wonderland")]);
         assert_eq!(result, "Hello Alice, welcome to Wonderland!");
     }
 
     #[test]
     fn test_render_template_with_multiple_replacements() {
         let template = "{a} {b} {a}";
-        let result = render_template(
-            template,
-            &[
-                ("{a}", "foo"),
-                ("{b}", "bar"),
-            ],
-        );
+        let result = render_template(template, &[("{a}", "foo"), ("{b}", "bar")]);
         assert_eq!(result, "foo bar foo");
     }
 
