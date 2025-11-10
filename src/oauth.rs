@@ -79,7 +79,8 @@ impl OAuthManager {
     }
 
     pub async fn load_token(&self) -> Result<Option<Token>> {
-        let token_file = utils::get_app_file_path("token.json");
+        let token_file = utils::get_app_file_path(&self.config, "token.json")
+            .context("Failed to get token file path")?;
 
         if !token_file.exists() {
             return Ok(None);
@@ -106,7 +107,8 @@ impl OAuthManager {
     }
 
     pub async fn save_token(&self, token: &Token) -> Result<()> {
-        let token_file = utils::get_app_file_path("token.json");
+        let token_file = utils::get_app_file_path(&self.config, "token.json")
+            .context("Failed to get token file path")?;
         let content = serde_json::to_string_pretty(token)
             .context("Failed to serialize token")?;
         std::fs::write(&token_file, content)

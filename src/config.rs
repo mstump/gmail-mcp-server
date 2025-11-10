@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::path::PathBuf;
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "gmail-mcp-server")]
@@ -31,6 +32,10 @@ pub struct Config {
     /// Login route path (defaults to /login)
     #[arg(long, env = "LOGIN_ROUTE", default_value = "/login")]
     pub login_route: String,
+
+    /// Application data directory (defaults to platform-specific location)
+    #[arg(long, env = "APP_DATA_DIR")]
+    pub app_data_dir: Option<PathBuf>,
 }
 
 impl Config {
@@ -50,6 +55,24 @@ impl Config {
     pub fn login_route(&self) -> &str {
         &self.login_route
     }
+
+    /// Get the application data directory, using configured value or defaulting to platform-specific location
+    pub fn app_data_dir(&self) -> PathBuf {
+        if let Some(ref dir) = self.app_data_dir {
+            return dir.clone();
+        }
+
+        // Default platform-specific behavior
+        if cfg!(windows) {
+            std::env::var("APPDATA")
+                .map(|appdata| PathBuf::from(appdata).join("gmail-mcp-server-data"))
+                .unwrap_or_else(|_| PathBuf::from(".").join("gmail-mcp-server-data"))
+        } else {
+            std::env::var("HOME")
+                .map(|home| PathBuf::from(home).join(".gmail-mcp-server-data"))
+                .unwrap_or_else(|_| PathBuf::from(".").join("gmail-mcp-server-data"))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -66,6 +89,7 @@ mod tests {
             metrics_route: "/metrics".to_string(),
             mcp_route: "/mcp".to_string(),
             login_route: "/login".to_string(),
+            app_data_dir: None,
         };
         assert_eq!(config.oauth_redirect_url(), "https://example.com/callback");
     }
@@ -80,6 +104,7 @@ mod tests {
             metrics_route: "/metrics".to_string(),
             mcp_route: "/mcp".to_string(),
             login_route: "/login".to_string(),
+            app_data_dir: None,
         };
         assert_eq!(config.oauth_redirect_url(), "http://localhost:3000/callback");
     }
@@ -94,6 +119,7 @@ mod tests {
             metrics_route: "/metrics".to_string(),
             mcp_route: "/mcp".to_string(),
             login_route: "/login".to_string(),
+            app_data_dir: None,
         };
         assert_eq!(config.oauth_redirect_url(), "http://localhost:9000/callback");
     }
@@ -108,6 +134,7 @@ mod tests {
             metrics_route: "/custom-metrics".to_string(),
             mcp_route: "/mcp".to_string(),
             login_route: "/login".to_string(),
+            app_data_dir: None,
         };
         assert_eq!(config.metrics_route(), "/custom-metrics");
     }
@@ -122,6 +149,7 @@ mod tests {
             metrics_route: "/metrics".to_string(),
             mcp_route: "/mcp".to_string(),
             login_route: "/login".to_string(),
+            app_data_dir: None,
         };
         assert_eq!(config.metrics_route(), "/metrics");
     }
@@ -136,6 +164,7 @@ mod tests {
             metrics_route: "/metrics".to_string(),
             mcp_route: "/custom-mcp".to_string(),
             login_route: "/login".to_string(),
+            app_data_dir: None,
         };
         assert_eq!(config.mcp_route(), "/custom-mcp");
     }
@@ -150,6 +179,7 @@ mod tests {
             metrics_route: "/metrics".to_string(),
             mcp_route: "/mcp".to_string(),
             login_route: "/login".to_string(),
+            app_data_dir: None,
         };
         assert_eq!(config.mcp_route(), "/mcp");
     }
@@ -164,6 +194,7 @@ mod tests {
             metrics_route: "/metrics".to_string(),
             mcp_route: "/mcp".to_string(),
             login_route: "/custom-login".to_string(),
+            app_data_dir: None,
         };
         assert_eq!(config.login_route(), "/custom-login");
     }
@@ -178,8 +209,42 @@ mod tests {
             metrics_route: "/metrics".to_string(),
             mcp_route: "/mcp".to_string(),
             login_route: "/login".to_string(),
+            app_data_dir: None,
         };
         assert_eq!(config.login_route(), "/login");
+    }
+
+    #[test]
+    fn test_app_data_dir_uses_configured_value() {
+        let custom_dir = PathBuf::from("/custom/path");
+        let config = Config {
+            port: 8080,
+            gmail_client_id: None,
+            gmail_client_secret: None,
+            oauth_redirect_url: None,
+            metrics_route: "/metrics".to_string(),
+            mcp_route: "/mcp".to_string(),
+            login_route: "/login".to_string(),
+            app_data_dir: Some(custom_dir.clone()),
+        };
+        assert_eq!(config.app_data_dir(), custom_dir);
+    }
+
+    #[test]
+    fn test_app_data_dir_falls_back_to_default() {
+        let config = Config {
+            port: 8080,
+            gmail_client_id: None,
+            gmail_client_secret: None,
+            oauth_redirect_url: None,
+            metrics_route: "/metrics".to_string(),
+            mcp_route: "/mcp".to_string(),
+            login_route: "/login".to_string(),
+            app_data_dir: None,
+        };
+        let dir = config.app_data_dir();
+        // Should end with "gmail-mcp-server_data" or ".gmail-mcp-server_data" depending on platform
+        assert!(dir.to_string_lossy().contains("gmail-mcp-server_data"));
     }
 }
 

@@ -36,4 +36,5 @@ prometheus = "0.13"
 [dev-dependencies]
 tokio-test = "0.4"
 mockito = "1.2"
+tempfile = "3.10"
 

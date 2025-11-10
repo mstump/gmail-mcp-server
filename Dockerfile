@@ -13,9 +13,13 @@ COPY templates ./templates
 RUN cargo install --path .
 
 # Runtime stage
-FROM debian:bullseye-slim
+FROM debian:trixie-slim
 
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    libc6 \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/cargo/bin/gmail-mcp-server /usr/local/bin/gmail-mcp-server
 
@@ -24,5 +28,5 @@ COPY --from=builder /usr/local/cargo/bin/gmail-mcp-server /usr/local/bin/gmail-m
 EXPOSE 8080
 
 # Start the executable with --http flag
-CMD ["gmail-mcp-server", "--http"]
+CMD ["gmail-mcp-server"]
 

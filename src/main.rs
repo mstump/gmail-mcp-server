@@ -58,8 +58,12 @@ async fn main() -> Result<()> {
         return Err(anyhow::anyhow!("GMAIL_CLIENT_SECRET environment variable not set"));
     }
 
-    info!("📁 App data directory: {}", utils::get_app_data_dir().display());
-    info!("🔑 Token file: {}", utils::get_app_file_path("token.json").display());
+    let app_data_dir = utils::get_app_data_dir(&config)
+        .context("Failed to create app data directory")?;
+    let token_file = utils::get_app_file_path(&config, "token.json")
+        .context("Failed to get token file path")?;
+    info!("📁 App data directory: {}", app_data_dir.display());
+    info!("🔑 Token file: {}", token_file.display());
 
     // Initialize Gmail server without OAuth (lazy authentication)
     let gmail_server = Arc::new(gmail::GmailServer::new(&config)?);
