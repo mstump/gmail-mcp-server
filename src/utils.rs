@@ -40,8 +40,14 @@ mod tests {
             gmail_client_secret: None,
             oauth_redirect_url: None,
             metrics_route: "/metrics".to_string(),
-            mcp_route: "/mcp".to_string(),
+            http_stream_route: "/stream".to_string(),
+            sse_config: crate::config::SseConfig {
+                sse_prefix: "/sse".to_string(),
+            },
             login_route: "/login".to_string(),
+            callback_route: "/callback".to_string(),
+            health_route: "/health".to_string(),
+            root_route: "/".to_string(),
             app_data_dir: Some(custom_dir.clone()),
         };
 
@@ -61,8 +67,14 @@ mod tests {
             gmail_client_secret: None,
             oauth_redirect_url: None,
             metrics_route: "/metrics".to_string(),
-            mcp_route: "/mcp".to_string(),
+            http_stream_route: "/stream".to_string(),
+            sse_config: crate::config::SseConfig {
+                sse_prefix: "/sse".to_string(),
+            },
             login_route: "/login".to_string(),
+            callback_route: "/callback".to_string(),
+            health_route: "/health".to_string(),
+            root_route: "/".to_string(),
             app_data_dir: Some(new_dir.clone()),
         };
 
@@ -83,8 +95,14 @@ mod tests {
             gmail_client_secret: None,
             oauth_redirect_url: None,
             metrics_route: "/metrics".to_string(),
-            mcp_route: "/mcp".to_string(),
+            http_stream_route: "/stream".to_string(),
+            sse_config: crate::config::SseConfig {
+                sse_prefix: "/sse".to_string(),
+            },
             login_route: "/login".to_string(),
+            callback_route: "/callback".to_string(),
+            health_route: "/health".to_string(),
+            root_route: "/".to_string(),
             app_data_dir: Some(custom_dir.clone()),
         };
 
@@ -111,8 +129,14 @@ mod tests {
             gmail_client_secret: None,
             oauth_redirect_url: None,
             metrics_route: "/metrics".to_string(),
-            mcp_route: "/mcp".to_string(),
+            http_stream_route: "/stream".to_string(),
+            sse_config: crate::config::SseConfig {
+                sse_prefix: "/sse".to_string(),
+            },
             login_route: "/login".to_string(),
+            callback_route: "/callback".to_string(),
+            health_route: "/health".to_string(),
+            root_route: "/".to_string(),
             app_data_dir: Some(file_path),
         };
 
