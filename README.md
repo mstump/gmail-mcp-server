@@ -173,12 +173,18 @@ The server will:
 
 ### Server Endpoints
 
-- **Root** (`/`) - Server information page
-- **Health Check** (`/health`) - Health check endpoint
-- **Login** (`/login`) - OAuth authentication initiation
-- **Callback** (`/callback`) - OAuth callback handler
-- **Metrics** (`/metrics`) - Prometheus metrics endpoint
-- **MCP** (`/mcp`) - MCP protocol endpoint
+The server exposes the following HTTP endpoints:
+
+- **Root** (`GET /`) - Server information page with endpoint documentation
+- **Health Check** (`GET /health`) - Health check endpoint (returns `200 OK`)
+- **Login** (`GET /login`) - OAuth authentication initiation (redirects to Google OAuth)
+- **Callback** (`GET /callback`) - OAuth callback handler (processes OAuth response)
+- **Metrics** (`GET /metrics`) - Prometheus metrics endpoint (returns Prometheus-formatted metrics)
+- **HTTP Stream** (`POST /stream`) - MCP protocol endpoint via HTTP streaming
+- **SSE** (`GET /sse/sse`) - Server-Sent Events endpoint for MCP protocol
+- **SSE POST** (`POST /sse/message`) - POST endpoint for SSE-based MCP protocol
+
+**Note:** All route paths can be customized via environment variables (see [Configuration](#configuration) section).
 
 ## Docker Deployment
 
