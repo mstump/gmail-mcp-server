@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use oauth2::{
     AuthUrl, AuthorizationCode, ClientId, ClientSecret, EndpointSet, RedirectUrl, Scope,
-    TokenResponse, TokenUrl, basic::BasicClient,
+    TokenResponse, TokenUrl, basic::BasicClient, RefreshToken,
 };
 use reqwest;
 use serde::{Deserialize, Serialize};
@@ -152,8 +152,55 @@ impl OAuthManager {
         Ok(token)
     }
 
+    pub async fn refresh_token(&self, refresh_token: &str) -> Result<Token> {
+        let refresh_token = RefreshToken::new(refresh_token.to_string());
+        let http_client = reqwest::Client::new();
+        let token_result = self
+            .client
+            .exchange_refresh_token(&refresh_token)
+            .request_async(&http_client)
+            .await
+            .context("Failed to refresh token")?;
+
+        let mut new_token = Token::from_token_response(&token_result);
+        if new_token.refresh_token.is_none() {
+            new_token.refresh_token = Some(refresh_token.secret().clone());
+        }
+        self.save_token(&new_token).await?;
+        Ok(new_token)
+    }
+
     pub async fn get_token(&self) -> Option<Token> {
-        self.token.read().await.clone()
+        let mut token_guard = self.token.write().await;
+        if let Some(token) = token_guard.as_ref() {
+            if let Some(expires_at) = token.expires_at {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+
+                if now >= expires_at {
+                    if let Some(refresh_token) = token.refresh_token.clone() {
+                        match self.refresh_token(&refresh_token).await {
+                            Ok(new_token) => {
+                                *token_guard = Some(new_token.clone());
+                                return Some(new_token);
+                            }
+                            Err(e) => {
+                                warn!("Failed to refresh token: {}", e);
+                                *token_guard = None;
+                                return None;
+                            }
+                        }
+                    } else {
+                        warn!("Token expired and no refresh token available");
+                        *token_guard = None;
+                        return None;
+                    }
+                }
+            }
+        }
+        token_guard.clone()
     }
 
     pub async fn set_token(&self, token: Token) {

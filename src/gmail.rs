@@ -37,13 +37,21 @@ impl GmailServer {
             if let Some(token) = self.oauth_manager.load_token().await? {
                 self.oauth_manager.set_token(token).await;
                 *self.authenticated.write().await = true;
-                return Ok(());
             }
-            return Err(anyhow::anyhow!(
-                "Not authenticated. Please visit /login to authenticate."
-            ));
         }
-        Ok(())
+
+        // Now, check if we can get a valid access token.
+        // This will attempt to refresh the token if it's expired.
+        if self.get_access_token().await.is_ok() {
+            // If we have a token, we are authenticated.
+            *self.authenticated.write().await = true;
+            Ok(())
+        } else {
+            *self.authenticated.write().await = false;
+            Err(anyhow::anyhow!(
+                "Not authenticated. Please visit /login to authenticate."
+            ))
+        }
     }
 
     #[allow(dead_code)]

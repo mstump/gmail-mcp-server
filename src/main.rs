@@ -303,24 +303,21 @@ async fn main() -> Result<()> {
     // Handle signals for graceful shutdown
     let cancel_token = ct.clone();
     tokio::spawn(async move {
-        match tokio::signal::ctrl_c().await {
-            Ok(()) => {
-                info!("Received Ctrl+C, shutting down server...");
-                cancel_token.cancel();
-            }
-            Err(err) => {
-                error!("Unable to listen for Ctrl+C signal: {}", err);
-            }
-        }
+        tokio::signal::ctrl_c().await.unwrap();
+        info!("Received Ctrl+C, shutting down server...");
+        cancel_token.cancel();
     });
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            // Wait for cancellation signal
-            ct.cancelled().await;
-            info!("Server is shutting down...");
-        })
-        .await?;
+    // Replace axum::serve with a custom implementation that awaits shutdown
+    let server = axum::serve(listener, app);
+    let graceful = server.with_graceful_shutdown(async move {
+        ct.cancelled().await;
+        info!("Server is shutting down...");
+    });
+
+    if let Err(e) = graceful.await {
+        error!("Server error: {}", e);
+    }
 
     Ok(())
 }
