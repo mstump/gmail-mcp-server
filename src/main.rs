@@ -16,6 +16,8 @@ use axum::{
     response::{Html, IntoResponse, Redirect, Response},
     routing::get,
 };
+use axum_prometheus::PrometheusMetricLayer;
+
 use clap::Parser;
 use config::Config;
 use dotenv::dotenv;
@@ -150,8 +152,12 @@ async fn main() -> Result<()> {
     // Create OAuth manager
     let oauth_manager = Arc::new(oauth::OAuthManager::new(config.clone())?);
 
-    // Create metrics
-    let oauth_metrics = Arc::new(metrics::OAuthMetrics::new()?);
+    // Initialize Prometheus metrics recorder (axum-prometheus uses metrics-exporter-prometheus
+    // which installs a global recorder that all metrics will use)
+    let (metric_layer, metric_handle) = PrometheusMetricLayer::pair();
+
+    // Create OAuth metrics - they will automatically use the global recorder installed by axum-prometheus
+    let oauth_metrics = Arc::new(metrics::OAuthMetrics::new());
 
     // Store CSRF tokens temporarily (in production, use Redis or similar)
     let csrf_tokens: Arc<RwLock<std::collections::HashMap<String, String>>> =
@@ -212,6 +218,7 @@ async fn main() -> Result<()> {
         oauth_manager: oauth_manager.clone(),
         csrf_tokens: csrf_tokens.clone(),
         metrics: oauth_metrics.clone(),
+        prometheus_handle: metric_handle.clone(),
         config: config.clone(),
     };
     // Build HTTP server with routes
@@ -257,6 +264,7 @@ async fn main() -> Result<()> {
         .nest_service(&http_stream_route, mcp_service)
         .layer(axum::middleware::from_fn(log_request_body))
         .layer(ServiceBuilder::new().layer(trace_layer))
+        .layer(metric_layer)
         .with_state(app_state);
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.port))
@@ -323,6 +331,7 @@ struct AppState {
     oauth_manager: Arc<oauth::OAuthManager>,
     csrf_tokens: Arc<RwLock<std::collections::HashMap<String, String>>>,
     metrics: Arc<metrics::OAuthMetrics>,
+    prometheus_handle: axum_prometheus::metrics_exporter_prometheus::PrometheusHandle,
     config: Config,
 }
 
@@ -413,17 +422,17 @@ async fn metrics_handler(State(state): State<AppState>) -> Result<Response<Strin
     let token = state.oauth_manager.get_token().await;
     state.metrics.update_token_metrics(token.as_ref());
 
-    match state.metrics.gather() {
-        Ok(metrics_text) => {
-            let mut response = Response::new(metrics_text);
-            response.headers_mut().insert(
-                header::CONTENT_TYPE,
-                header::HeaderValue::from_static("text/plain; version=0.0.4"),
-            );
-            Ok(response)
-        }
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
-    }
+    // Render all metrics from the global recorder
+    // Since OAuth metrics now use the metrics crate, they are automatically included
+    // in the global recorder used by axum-prometheus, so we just need to render once
+    let metrics_output = state.prometheus_handle.render();
+
+    let mut response = Response::new(metrics_output);
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("text/plain; version=0.0.4"),
+    );
+    Ok(response)
 }
 
 #[cfg(test)]
@@ -552,11 +561,18 @@ mod tests {
         };
 
         // Create a minimal AppState with Config
+        // Note: We can't use PrometheusMetricLayer::pair() in tests without a Tokio runtime,
+        // so we create a handle directly for testing purposes
+        use axum_prometheus::metrics_exporter_prometheus::PrometheusBuilder;
+        let prometheus_handle = PrometheusBuilder::new()
+            .install_recorder()
+            .expect("Failed to install Prometheus recorder");
         let app_state = AppState {
             gmail_server: Arc::new(gmail::GmailServer::new(&config).unwrap()),
             oauth_manager: Arc::new(oauth::OAuthManager::new(config.clone()).unwrap()),
             csrf_tokens: Arc::new(RwLock::new(HashMap::new())),
-            metrics: Arc::new(metrics::OAuthMetrics::new().unwrap()),
+            metrics: Arc::new(metrics::OAuthMetrics::new()),
+            prometheus_handle,
             config: config.clone(),
         };
 

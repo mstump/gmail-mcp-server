@@ -33,6 +33,9 @@ tokio-util = { version = "0.7" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 prometheus = "0.13"
+axum-prometheus = "0.9.0"
+metrics = "0.24.2"
+metrics-exporter-prometheus = "0.17.2"
 bytes = "1.10.1"
 http-body-util = "0.1.3"
 
