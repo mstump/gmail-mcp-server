@@ -107,29 +107,50 @@ The binary will be located at `target/release/gmail-mcp-server` (or `target/debu
 
 ## Configuration
 
+The server can be configured via command-line flags and environment variables.
+
+### Command-Line Flags
+
+Run `gmail-mcp-server --help` for a full list of commands and flags.
+
+- `--gmail-client-id`: Your Google OAuth Client ID
+- `--gmail-client-secret`: Your Google OAuth Client Secret
+- `--app-data-dir`: Custom directory for storing application data (e.g., tokens)
+
+**HTTP Server Flags (`http` command):**
+
+- `--port`: HTTP server port (default: 8080)
+- `--oauth-redirect-url`: Custom OAuth redirect URL
+- `--metrics-route`: Metrics endpoint path
+- `--http-stream-route`: HTTP stream endpoint path
+- `--sse-prefix`: SSE router prefix path
+- `--login-route`: Login endpoint path
+- `--callback-route`: OAuth callback endpoint path
+- `--health-route`: Health check endpoint path
+- `--root-route`: Root endpoint path
+
 ### Environment Variables
 
-The server supports the following environment variables:
+The server also supports environment variables, which correspond to the CLI flags.
 
-#### Required
-
-- `GMAIL_CLIENT_ID` - Your Google OAuth Client ID (required)
-- `GMAIL_CLIENT_SECRET` - Your Google OAuth Client Secret (required)
-
-#### Optional
-
-- `PORT` - HTTP server port (default: `8080`)
-- `OAUTH_REDIRECT_URL` - OAuth redirect URL (default: `http://localhost:{PORT}/callback`)
-- `METRICS_ROUTE` - Metrics endpoint path (default: `/metrics`)
-- `MCP_ROUTE` - MCP endpoint path (default: `/mcp`)
-- `LOGIN_ROUTE` - Login endpoint path (default: `/login`)
-- `APP_DATA_DIR` - Application data directory (default: platform-specific location)
+- `GMAIL_CLIENT_ID`
+- `GMAIL_CLIENT_SECRET`
+- `APP_DATA_DIR`
+- `PORT`
+- `OAUTH_REDIRECT_URL`
+- `METRICS_ROUTE`
+- `HTTP_STREAM_ROUTE`
+- `SSE_PREFIX`
+- `LOGIN_ROUTE`
+- `CALLBACK_ROUTE`
+- `HEALTH_ROUTE`
+- `ROOT_ROUTE`
 
 ### Using a `.env` File
 
 Create a `.env` file in the project root:
 
-```bash
+```
 # Required
 GMAIL_CLIENT_ID=your_client_id_here.apps.googleusercontent.com
 GMAIL_CLIENT_SECRET=your_client_secret_here
@@ -144,34 +165,93 @@ The server automatically loads environment variables from a `.env` file if it ex
 
 The server stores authentication tokens in the following locations:
 
-- **Windows**: `%APPDATA%\gmail-mcp-server-data\`
+- **Windows**: `%APPDATA%\\gmail-mcp-server-data\\`
 - **macOS/Linux**: `~/.gmail-mcp-server-data/`
 
 The token file is stored as `token.json` in this directory.
 
 ## Running the Server
 
-### Local Development
+The server is now managed via CLI commands.
+
+### `http` Command
+
+Run the HTTP server. All flags are optional.
 
 ```bash
-# Build the server
-make build
+# Run with default settings
+gmail-mcp-server http
 
-# Run the server
-./gmail-mcp-server
+# Run with custom port
+gmail-mcp-server http --port 3000
 
-# Or with custom port
-PORT=3000 ./gmail-mcp-server
+# Run with custom client ID and secret
+gmail-mcp-server --gmail-client-id "YOUR_ID" --gmail-client-secret "YOUR_SECRET" http
 ```
 
-The server will:
+### `tools` Command
 
-1. Start on `http://localhost:8080` (or your configured port)
-2. Display login URL: `http://localhost:8080/login`
-3. Visit the login URL in your browser to authenticate
-4. After authentication, the server is ready to accept MCP connections
+Access MCP tools directly from the command line.
 
-### Server Endpoints
+**Note:** All `tools` subcommands require `--gmail-client-id` and `--gmail-client-secret` to be set, either as flags or environment variables.
+
+#### `search-threads`
+
+Search Gmail threads.
+
+```bash
+gmail-mcp-server tools search-threads "from:test@example.com" --max-results 5
+```
+
+#### `create-draft`
+
+Create a new draft.
+
+```bash
+gmail-mcp-server tools create-draft "recipient@example.com" "Subject" "Body" --thread-id "thread123"
+```
+
+#### `extract-attachment`
+
+Extract text from an attachment.
+
+```bash
+gmail-mcp-server tools extract-attachment "message123" "report.pdf"
+```
+
+#### `fetch-email-bodies`
+
+Fetch email bodies for one or more thread IDs.
+
+```bash
+gmail-mcp-server tools fetch-email-bodies "thread123" "thread456"
+```
+
+#### `download-attachment`
+
+Download an attachment.
+
+```bash
+gmail-mcp-server tools download-attachment "message123" "invoice.pdf" --download-dir "/tmp/downloads"
+```
+
+#### `forward-email`
+
+Forward an email.
+
+```bash
+gmail-mcp-server tools forward-email "message123" "forward-to@example.com" "Fwd: Subject" "Please see this"
+```
+
+#### `send-draft`
+
+Send a draft.
+
+```bash
+gmail-mcp-server tools send-draft "draft123"
+```
+
+## Server Endpoints
 
 The server exposes the following HTTP endpoints:
 
@@ -315,140 +395,6 @@ You can edit these config files directly:
 
 - **Cursor**: `~/.cursor/mcp.json` (macOS/Linux) or `%APPDATA%\Cursor\mcp.json` (Windows)
 - **Claude Desktop**: `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
-
-## Available MCP Tools
-
-### `search_threads`
-
-Search Gmail threads using a query string.
-
-**Parameters:**
-
-- `query` (string, required) - Gmail search query (e.g., "from:example@gmail.com", "subject:meeting")
-- `max_results` (number, optional) - Maximum number of results to return (default: 10)
-
-**Example:**
-
-```json
-{
-  "query": "from:example@gmail.com subject:meeting",
-  "max_results": 20
-}
-```
-
-### `create_draft`
-
-Create a Gmail draft email.
-
-**Parameters:**
-
-- `to` (string, required) - Recipient email address
-- `subject` (string, required) - Email subject
-- `body` (string, required) - Email body text
-- `thread_id` (string, optional) - Thread ID to reply to
-
-**Example:**
-
-```json
-{
-  "to": "recipient@example.com",
-  "subject": "Meeting Follow-up",
-  "body": "Thank you for the meeting today.",
-  "thread_id": "thread_id_here"
-}
-```
-
-### `extract_attachment_by_filename`
-
-Extract text from an email attachment by filename.
-
-**Parameters:**
-
-- `message_id` (string, required) - Gmail message ID
-- `filename` (string, required) - Attachment filename
-
-**Example:**
-
-```json
-{
-  "message_id": "message_id_here",
-  "filename": "document.pdf"
-}
-```
-
-### `fetch_email_bodies`
-
-Fetch email bodies for multiple thread IDs.
-
-**Parameters:**
-
-- `thread_ids` (array of strings, required) - List of thread IDs to fetch
-
-**Example:**
-
-```json
-{
-  "thread_ids": ["thread_id_1", "thread_id_2"]
-}
-```
-
-### `download_attachment`
-
-Download an attachment to the local filesystem.
-
-**Parameters:**
-
-- `message_id` (string, required) - Gmail message ID
-- `filename` (string, required) - Attachment filename
-- `download_dir` (string, optional) - Download directory (default: current directory)
-
-**Example:**
-
-```json
-{
-  "message_id": "message_id_here",
-  "filename": "document.pdf",
-  "download_dir": "/tmp"
-}
-```
-
-### `forward_email`
-
-Forward an email.
-
-**Parameters:**
-
-- `message_id` (string, required) - Gmail message ID to forward
-- `to` (string, required) - Recipient email address
-- `subject` (string, required) - Forward subject
-- `body` (string, required) - Forward body text
-
-**Example:**
-
-```json
-{
-  "message_id": "message_id_here",
-  "to": "recipient@example.com",
-  "subject": "Fwd: Original Subject",
-  "body": "Please see the forwarded email below."
-}
-```
-
-### `send_draft`
-
-Send an existing draft email.
-
-**Parameters:**
-
-- `draft_id` (string, required) - Gmail draft ID to send
-
-**Example:**
-
-```json
-{
-  "draft_id": "draft_id_here"
-}
-```
 
 ## Development
 
