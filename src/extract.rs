@@ -18,7 +18,7 @@ pub fn extract_text_from_bytes(data: &[u8], mime_type: &str, filename: &str) -> 
             } else if lower_filename.ends_with(".txt") {
                 Ok(String::from_utf8(data.to_vec())?)
             } else {
-                Err(anyhow::anyhow!("Unsupported file type: {}", mime_type))
+                Err(anyhow::anyhow!("Unsupported file type: {mime_type}"))
             }
         }
     }
@@ -33,7 +33,7 @@ fn extract_pdf_text(data: &[u8]) -> Result<String> {
     drop(file);
 
     let markdown = markdownify::pdf::pdf_convert(&temp_file, None)
-        .map_err(|e| anyhow::anyhow!("Failed to extract text from PDF: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to extract text from PDF: {e}"))?;
 
     // Clean up temp file
     let _ = std::fs::remove_file(&temp_file);
@@ -50,7 +50,7 @@ fn extract_docx_text(data: &[u8]) -> Result<String> {
     drop(file);
 
     let markdown = markdownify::docx::docx_convert(&temp_file)
-        .map_err(|e| anyhow::anyhow!("Failed to extract text from DOCX: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to extract text from DOCX: {e}"))?;
 
     // Clean up temp file
     let _ = std::fs::remove_file(&temp_file);

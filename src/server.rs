@@ -1,10 +1,9 @@
 use rmcp::{
-    ErrorData as McpError, RoleServer, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::*,
     schemars,
     service::RequestContext,
-    tool, tool_handler, tool_router,
+    tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -40,7 +39,7 @@ impl GmailMcpServer {
         .await
         {
             Ok(result) => Ok(CallToolResult::success(vec![Content::text(
-                serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("Error: {}", e)),
+                serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("Error: {e}")),
             )])),
             Err(e) => {
                 error!("Failed to search threads: {}", e);
@@ -67,7 +66,7 @@ impl GmailMcpServer {
         .await
         {
             Ok(result) => Ok(CallToolResult::success(vec![Content::text(
-                serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("Error: {}", e)),
+                serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("Error: {e}")),
             )])),
             Err(e) => {
                 error!("Failed to create draft: {}", e);
@@ -92,7 +91,7 @@ impl GmailMcpServer {
         .await
         {
             Ok(result) => Ok(CallToolResult::success(vec![Content::text(
-                serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("Error: {}", e)),
+                serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("Error: {e}")),
             )])),
             Err(e) => {
                 error!("Failed to extract attachment: {}", e);
@@ -111,7 +110,7 @@ impl GmailMcpServer {
     ) -> Result<CallToolResult, McpError> {
         match crate::tools::fetch_email_bodies(&self.gmail_server, &args.thread_ids).await {
             Ok(result) => Ok(CallToolResult::success(vec![Content::text(
-                serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("Error: {}", e)),
+                serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("Error: {e}")),
             )])),
             Err(e) => {
                 error!("Failed to fetch email bodies: {}", e);
@@ -137,7 +136,7 @@ impl GmailMcpServer {
         .await
         {
             Ok(result) => Ok(CallToolResult::success(vec![Content::text(
-                serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("Error: {}", e)),
+                serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("Error: {e}")),
             )])),
             Err(e) => {
                 error!("Failed to download attachment: {}", e);
@@ -164,7 +163,7 @@ impl GmailMcpServer {
         .await
         {
             Ok(result) => Ok(CallToolResult::success(vec![Content::text(
-                serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("Error: {}", e)),
+                serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("Error: {e}")),
             )])),
             Err(e) => {
                 error!("Failed to forward email: {}", e);
@@ -183,7 +182,7 @@ impl GmailMcpServer {
     ) -> Result<CallToolResult, McpError> {
         match crate::tools::send_draft(&self.gmail_server, &args.draft_id).await {
             Ok(result) => Ok(CallToolResult::success(vec![Content::text(
-                serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("Error: {}", e)),
+                serde_json::to_string_pretty(&result).unwrap_or_else(|e| format!("Error: {e}")),
             )])),
             Err(e) => {
                 error!("Failed to send draft: {}", e);

@@ -10,35 +10,35 @@ mod utils;
 
 use anyhow::{Context, Result};
 use axum::{
-    Router,
     extract::{Query, State},
-    http::{StatusCode, header},
+    http::{header, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     routing::get,
+    Router,
 };
 use axum_prometheus::PrometheusMetricLayer;
 
-use clap::Parser;
-use config::Config;
-use dotenv::dotenv;
-use rmcp::transport::{SseServer, sse_server::SseServerConfig};
-use rmcp::transport::streamable_http_server::{
-    StreamableHttpService, session::local::LocalSessionManager,
-};
-use std::net::SocketAddr;
-use std::time::Duration;
-use tokio_util::sync::CancellationToken;
-use serde::Deserialize;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use tracing::{error, info, debug, trace, Level};
-use tower_http::trace::TraceLayer;
-use tower::ServiceBuilder;
-use axum::middleware::Next;
 use axum::body::Body;
 use axum::extract::Request;
+use axum::middleware::Next;
 use bytes::Bytes;
+use clap::Parser;
+use config::{Cli, Commands, Config, HttpConfig, ToolsCmd};
+use dotenv::dotenv;
 use http_body_util::BodyExt;
+use rmcp::transport::streamable_http_server::{
+    session::local::LocalSessionManager, StreamableHttpService,
+};
+use rmcp::transport::{sse_server::SseServerConfig, SseServer};
+use serde::Deserialize;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
+use tower::ServiceBuilder;
+use tower_http::trace::TraceLayer;
+use tracing::{debug, error, info, trace, Level};
 
 #[derive(Deserialize)]
 struct CallbackQuery {
@@ -90,8 +90,62 @@ async fn main() -> Result<()> {
         info!("Loaded .env file");
     }
 
-    let config = Config::parse();
+    let cli = Cli::parse();
+    let config = cli.config;
 
+    match cli.command {
+        Commands::Http(http_config) => run_http_server(config, http_config).await,
+        Commands::Tools { tool } => run_tools(config, tool).await,
+    }
+}
+
+async fn run_tools(config: Config, tool: ToolsCmd) -> Result<()> {
+    let gmail_server = Arc::new(gmail::GmailServer::new(&config)?);
+    let result = match tool {
+        ToolsCmd::SearchThreads { query, max_results } => {
+            tools::search_threads(&gmail_server, &query, max_results).await
+        }
+        ToolsCmd::CreateDraft {
+            to,
+            subject,
+            body,
+            thread_id,
+        } => tools::create_draft(&gmail_server, &to, &subject, &body, thread_id.as_deref()).await,
+        ToolsCmd::ExtractAttachment {
+            message_id,
+            filename,
+        } => tools::extract_attachment_by_filename(&gmail_server, &message_id, &filename).await,
+        ToolsCmd::FetchEmailBodies { thread_ids } => {
+            tools::fetch_email_bodies(&gmail_server, &thread_ids).await
+        }
+        ToolsCmd::DownloadAttachment {
+            message_id,
+            filename,
+            download_dir,
+        } => {
+            tools::download_attachment(
+                &gmail_server,
+                &message_id,
+                &filename,
+                download_dir.as_deref(),
+            )
+            .await
+        }
+        ToolsCmd::ForwardEmail {
+            message_id,
+            to,
+            subject,
+            body,
+        } => tools::forward_email(&gmail_server, &message_id, &to, &subject, &body).await,
+        ToolsCmd::SendDraft { draft_id } => tools::send_draft(&gmail_server, &draft_id).await,
+    }?;
+
+    println!("{}", serde_json::to_string_pretty(&result)?);
+
+    Ok(())
+}
+
+async fn run_http_server(config: Config, http_config: HttpConfig) -> Result<()> {
     // Validate required environment variables
     if config.gmail_client_id.is_none() {
         return Err(anyhow::anyhow!(
@@ -116,41 +170,44 @@ async fn main() -> Result<()> {
 
     info!(
         "Starting Gmail MCP Server in HTTP mode on port {}...",
-        config.port
+        http_config.port
     );
     info!(
         "✅ Server will run persistently at http://localhost:{}",
-        config.port
+        http_config.port
     );
     info!(
         "   Visit http://localhost:{}{} to authenticate",
-        config.port,
-        config.login_route()
+        http_config.port,
+        http_config.login_route()
     );
     info!(
         "   HTTP stream endpoint: http://localhost:{}{}",
-        config.port,
-        config.http_stream_route()
+        http_config.port,
+        http_config.http_stream_route()
     );
     info!(
         "   SSE endpoint: http://localhost:{}{}",
-        config.port,
-        config.sse_route()
+        http_config.port,
+        http_config.sse_route()
     );
     info!(
         "   POST endpoint: http://localhost:{}{}",
-        config.port,
-        config.sse_post_route()
+        http_config.port,
+        http_config.sse_post_route()
     );
     info!(
         "   Metrics endpoint: http://localhost:{}{}",
-        config.port,
-        config.metrics_route()
+        http_config.port,
+        http_config.metrics_route()
     );
     info!("   (Use Ctrl+C to stop the server)");
 
     // Create OAuth manager
-    let oauth_manager = Arc::new(oauth::OAuthManager::new(config.clone())?);
+    let oauth_manager = Arc::new(oauth::OAuthManager::new(
+        config.clone(),
+        http_config.clone(),
+    )?);
 
     // Initialize Prometheus metrics recorder (axum-prometheus uses metrics-exporter-prometheus
     // which installs a global recorder that all metrics will use)
@@ -175,7 +232,7 @@ async fn main() -> Result<()> {
     let mcp_server = server::GmailMcpServer::new(gmail_server.clone());
 
     // Create StreamableHttpService for HTTP streaming
-    let http_stream_route = config.http_stream_route();
+    let http_stream_route = http_config.http_stream_route();
     let mcp_server_for_http = mcp_server.clone();
     let mcp_service = StreamableHttpService::new(
         move || Ok(mcp_server_for_http.clone()),
@@ -184,15 +241,15 @@ async fn main() -> Result<()> {
     );
 
     // Set up SSE server configuration
-    let addr: SocketAddr = format!("0.0.0.0:{}", config.port)
+    let addr: SocketAddr = format!("0.0.0.0:{}", http_config.port)
         .parse()
         .context("Failed to parse bind address")?;
     let ct = CancellationToken::new();
     // SSE routes are fixed: /sse for SSE endpoint, /message for POST endpoint
     // These are relative paths within the SSE router (nested under sse_prefix)
     // Final routes will be: {sse_prefix}/sse and {sse_prefix}/message
-    let sse_relative_path = config.sse_route().to_string(); // Fixed to "/sse"
-    let post_relative_path = config.sse_post_route().to_string(); // Fixed to "/message"
+    let sse_relative_path = http_config.sse_route().to_string(); // Fixed to "/sse"
+    let post_relative_path = http_config.sse_post_route().to_string(); // Fixed to "/message"
     let sse_config = SseServerConfig {
         bind: addr,
         sse_path: sse_relative_path.to_string(),
@@ -208,23 +265,23 @@ async fn main() -> Result<()> {
     sse_server.with_service(move || mcp_server.clone());
 
     // Build HTTP server with routes
-    let root_route = config.root_route();
-    let metrics_route = config.metrics_route();
-    let login_route = config.login_route();
-    let callback_route = config.callback_route();
-    let health_route = config.health_route();
+    let root_route = http_config.root_route();
+    let metrics_route = http_config.metrics_route();
+    let login_route = http_config.login_route();
+    let callback_route = http_config.callback_route();
+    let health_route = http_config.health_route();
     let app_state = AppState {
         gmail_server: gmail_server.clone(),
         oauth_manager: oauth_manager.clone(),
         csrf_tokens: csrf_tokens.clone(),
         metrics: oauth_metrics.clone(),
         prometheus_handle: metric_handle.clone(),
-        config: config.clone(),
+        http_config: http_config.clone(),
     };
     // Build HTTP server with routes
     // SSE router has its own routes configured via SseServerConfig
     // Nest the SSE router under the configured prefix to avoid route conflicts
-    let sse_prefix = config.sse_prefix();
+    let sse_prefix = http_config.sse_prefix();
 
     // Configure tracing middleware to log request headers and bodies at debug/trace level
     let trace_layer = TraceLayer::new_for_http()
@@ -249,55 +306,71 @@ async fn main() -> Result<()> {
                 trace!("request content-length: {:?}", content_length);
             }
         })
-        .on_response(|response: &axum::http::Response<_>, latency: std::time::Duration, _span: &tracing::Span| {
-            debug!("response status: {}, latency: {:?}", response.status(), latency);
-            trace!("response headers: {:?}", response.headers());
-        });
+        .on_response(
+            |response: &axum::http::Response<_>,
+             latency: std::time::Duration,
+             _span: &tracing::Span| {
+                debug!(
+                    "response status: {}, latency: {:?}",
+                    response.status(),
+                    latency
+                );
+                trace!("response headers: {:?}", response.headers());
+            },
+        );
 
     let app = Router::new()
         .route(root_route, get(root_handler))
-        .route(&login_route, get(login_handler))
-        .route(&callback_route, get(callback_handler))
-        .route(&health_route, get(health_handler))
-        .route(&metrics_route, get(metrics_handler))
+        .route(login_route, get(login_handler))
+        .route(callback_route, get(callback_handler))
+        .route(health_route, get(health_handler))
+        .route(metrics_route, get(metrics_handler))
         .nest_service(sse_prefix, sse_router)
-        .nest_service(&http_stream_route, mcp_service)
+        .nest_service(http_stream_route, mcp_service)
         .layer(axum::middleware::from_fn(log_request_body))
         .layer(ServiceBuilder::new().layer(trace_layer))
         .layer(metric_layer)
         .with_state(app_state);
 
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.port))
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", http_config.port))
         .await
         .context("Failed to bind to port")?;
 
     info!(
         "🌐 HTTP server starting on http://localhost:{}",
-        config.port
+        http_config.port
     );
-    info!("📖 View server info: http://localhost:{}{}", config.port, config.root_route());
-    info!("🔍 Health check: http://localhost:{}{}", config.port, config.health_route());
+    info!(
+        "📖 View server info: http://localhost:{}{}",
+        http_config.port,
+        http_config.root_route()
+    );
+    info!(
+        "🔍 Health check: http://localhost:{}{}",
+        http_config.port,
+        http_config.health_route()
+    );
     info!(
         "📊 Metrics endpoint: http://localhost:{}{}",
-        config.port,
-        config.metrics_route()
+        http_config.port,
+        http_config.metrics_route()
     );
     info!(
         "🔌 HTTP stream endpoint: http://localhost:{}{}",
-        config.port,
-        config.http_stream_route()
+        http_config.port,
+        http_config.http_stream_route()
     );
     info!(
         "🔌 SSE endpoint: http://localhost:{}{}{}",
-        config.port,
-        config.sse_prefix(),
-        config.sse_route()
+        http_config.port,
+        http_config.sse_prefix(),
+        http_config.sse_route()
     );
     info!(
         "📨 SSE POST endpoint: http://localhost:{}{}{}",
-        config.port,
-        config.sse_prefix(),
-        config.sse_post_route()
+        http_config.port,
+        http_config.sse_prefix(),
+        http_config.sse_post_route()
     );
 
     // Handle signals for graceful shutdown
@@ -329,7 +402,7 @@ struct AppState {
     csrf_tokens: Arc<RwLock<std::collections::HashMap<String, String>>>,
     metrics: Arc<metrics::OAuthMetrics>,
     prometheus_handle: axum_prometheus::metrics_exporter_prometheus::PrometheusHandle,
-    config: Config,
+    http_config: HttpConfig,
 }
 
 /// Render a template with placeholder replacements
@@ -343,17 +416,25 @@ fn render_template(template: &str, replacements: &[(&str, &str)]) -> String {
 
 async fn root_handler(State(state): State<AppState>) -> Html<String> {
     let template = include_str!("../templates/index.html");
-    let sse_route_full = format!("{}{}", state.config.sse_prefix(), state.config.sse_route());
-    let sse_post_route_full = format!("{}{}", state.config.sse_prefix(), state.config.sse_post_route());
+    let sse_route_full = format!(
+        "{}{}",
+        state.http_config.sse_prefix(),
+        state.http_config.sse_route()
+    );
+    let sse_post_route_full = format!(
+        "{}{}",
+        state.http_config.sse_prefix(),
+        state.http_config.sse_post_route()
+    );
     let html = render_template(
         template,
         &[
-            ("{root_route}", state.config.root_route()),
-            ("{login_route}", state.config.login_route()),
-            ("{callback_route}", state.config.callback_route()),
-            ("{health_route}", state.config.health_route()),
-            ("{metrics_route}", state.config.metrics_route()),
-            ("{http_stream_route}", state.config.http_stream_route()),
+            ("{root_route}", state.http_config.root_route()),
+            ("{login_route}", state.http_config.login_route()),
+            ("{callback_route}", state.http_config.callback_route()),
+            ("{health_route}", state.http_config.health_route()),
+            ("{metrics_route}", state.http_config.metrics_route()),
+            ("{http_stream_route}", state.http_config.http_stream_route()),
             ("{sse_route}", &sse_route_full),
             ("{sse_post_route}", &sse_post_route_full),
         ],
@@ -387,7 +468,7 @@ async fn callback_handler(
             template,
             &[
                 ("{error_message}", &error),
-                ("{login_route}", state.config.login_route()),
+                ("{login_route}", state.http_config.login_route()),
             ],
         );
         return Ok(Html(html));
@@ -536,15 +617,16 @@ mod tests {
 
     #[test]
     fn test_app_state_uses_config_for_routes() {
+        use std::collections::HashMap;
         use std::sync::Arc;
         use tokio::sync::RwLock;
-        use std::collections::HashMap;
 
         let config = Config {
-            port: 8080,
             gmail_client_id: Some("test-client-id".to_string()),
             gmail_client_secret: Some("test-client-secret".to_string()),
-            oauth_redirect_url: None,
+            ..Default::default()
+        };
+        let http_config = HttpConfig {
             metrics_route: "/custom-metrics".to_string(),
             http_stream_route: "/custom-stream".to_string(),
             sse_config: config::SseConfig {
@@ -554,7 +636,7 @@ mod tests {
             callback_route: "/custom-callback".to_string(),
             health_route: "/custom-health".to_string(),
             root_route: "/custom-root".to_string(),
-            app_data_dir: None,
+            ..Default::default()
         };
 
         // Create a minimal AppState with Config
@@ -566,21 +648,23 @@ mod tests {
             .expect("Failed to install Prometheus recorder");
         let app_state = AppState {
             gmail_server: Arc::new(gmail::GmailServer::new(&config).unwrap()),
-            oauth_manager: Arc::new(oauth::OAuthManager::new(config.clone()).unwrap()),
+            oauth_manager: Arc::new(
+                oauth::OAuthManager::new(config.clone(), http_config.clone()).unwrap(),
+            ),
             csrf_tokens: Arc::new(RwLock::new(HashMap::new())),
             metrics: Arc::new(metrics::OAuthMetrics::new()),
             prometheus_handle,
-            config: config.clone(),
+            http_config: http_config.clone(),
         };
 
         // Verify routes are accessible through config
-        assert_eq!(app_state.config.root_route(), "/custom-root");
-        assert_eq!(app_state.config.login_route(), "/custom-login");
-        assert_eq!(app_state.config.callback_route(), "/custom-callback");
-        assert_eq!(app_state.config.health_route(), "/custom-health");
-        assert_eq!(app_state.config.metrics_route(), "/custom-metrics");
-        assert_eq!(app_state.config.http_stream_route(), "/custom-stream");
-        assert_eq!(app_state.config.sse_route(), "/sse");
-        assert_eq!(app_state.config.sse_post_route(), "/message");
+        assert_eq!(app_state.http_config.root_route(), "/custom-root");
+        assert_eq!(app_state.http_config.login_route(), "/custom-login");
+        assert_eq!(app_state.http_config.callback_route(), "/custom-callback");
+        assert_eq!(app_state.http_config.health_route(), "/custom-health");
+        assert_eq!(app_state.http_config.metrics_route(), "/custom-metrics");
+        assert_eq!(app_state.http_config.http_stream_route(), "/custom-stream");
+        assert_eq!(app_state.http_config.sse_route(), "/sse");
+        assert_eq!(app_state.http_config.sse_post_route(), "/message");
     }
 }

@@ -1,14 +1,12 @@
 use anyhow::{Context, Result};
-use base64::{Engine, engine::general_purpose::URL_SAFE};
-use serde_json::{Value, json};
+use base64::{engine::general_purpose::URL_SAFE, Engine};
+use serde_json::{json, Value};
 use std::path::PathBuf;
 use tracing::error;
 
 use crate::email::decode_email_content;
 use crate::extract::{extract_text_from_bytes, is_extractable_document};
-use crate::gmail::GmailServer;
-
-const GMAIL_API_BASE: &str = "https://gmail.googleapis.com/gmail/v1";
+use crate::gmail::{GmailServer, GMAIL_API_BASE};
 
 /// Search Gmail threads
 pub async fn search_threads(
@@ -37,11 +35,7 @@ pub async fn search_threads(
     let status = response.status();
     if !status.is_success() {
         let error_text = response.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!(
-            "Gmail API error: {} - {}",
-            status,
-            error_text
-        ));
+        return Err(anyhow::anyhow!("Gmail API error: {status} - {error_text}"));
     }
 
     let result: Value = response.json().await.context("Failed to parse response")?;
@@ -62,8 +56,8 @@ pub async fn create_draft(
     let user_id = gmail_server.user_id();
 
     // Build email message in RFC 2822 format
-    let mut message = format!("To: {}\r\n", to);
-    message.push_str(&format!("Subject: {}\r\n", subject));
+    let mut message = format!("To: {to}\r\n");
+    message.push_str(&format!("Subject: {subject}\r\n"));
     message.push_str("Content-Type: text/plain; charset=utf-8\r\n");
     message.push_str("\r\n");
     message.push_str(body);
@@ -82,7 +76,7 @@ pub async fn create_draft(
         draft_payload["message"]["threadId"] = json!(tid);
     }
 
-    let url = format!("{}/users/{}/drafts", GMAIL_API_BASE, user_id);
+    let url = format!("{GMAIL_API_BASE}/users/{user_id}/drafts");
 
     let response = client
         .post(&url)
@@ -94,11 +88,7 @@ pub async fn create_draft(
     let status = response.status();
     if !status.is_success() {
         let error_text = response.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!(
-            "Gmail API error: {} - {}",
-            status,
-            error_text
-        ));
+        return Err(anyhow::anyhow!("Gmail API error: {status} - {error_text}"));
     }
 
     let result: Value = response.json().await.context("Failed to parse response")?;
@@ -117,10 +107,7 @@ pub async fn extract_attachment_by_filename(
     let user_id = gmail_server.user_id();
 
     // Get the message
-    let url = format!(
-        "{}/users/{}/messages/{}",
-        GMAIL_API_BASE, user_id, message_id
-    );
+    let url = format!("{GMAIL_API_BASE}/users/{user_id}/messages/{message_id}");
     let response = client
         .get(&url)
         .send()
@@ -130,11 +117,7 @@ pub async fn extract_attachment_by_filename(
     let status = response.status();
     if !status.is_success() {
         let error_text = response.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!(
-            "Gmail API error: {} - {}",
-            status,
-            error_text
-        ));
+        return Err(anyhow::anyhow!("Gmail API error: {status} - {error_text}"));
     }
 
     let message: Value = response.json().await.context("Failed to parse message")?;
@@ -167,13 +150,11 @@ pub async fn extract_attachment_by_filename(
     }
 
     let (att_id, mime) = find_attachment(parts, filename)
-        .ok_or_else(|| anyhow::anyhow!("Attachment '{}' not found in message", filename))?;
+        .ok_or_else(|| anyhow::anyhow!("Attachment '{filename}' not found in message"))?;
 
     // Download the attachment
-    let att_url = format!(
-        "{}/users/{}/messages/{}/attachments/{}",
-        GMAIL_API_BASE, user_id, message_id, att_id
-    );
+    let att_url =
+        format!("{GMAIL_API_BASE}/users/{user_id}/messages/{message_id}/attachments/{att_id}");
 
     let att_response = client
         .get(&att_url)
@@ -185,9 +166,7 @@ pub async fn extract_attachment_by_filename(
     if !att_status.is_success() {
         let error_text = att_response.text().await.unwrap_or_default();
         return Err(anyhow::anyhow!(
-            "Gmail API error: {} - {}",
-            att_status,
-            error_text
+            "Gmail API error: {att_status} - {error_text}"
         ));
     }
 
@@ -239,12 +218,12 @@ pub async fn fetch_email_bodies(
     let mut results = Vec::new();
 
     for thread_id in thread_ids {
-        let url = format!("{}/users/{}/threads/{}", GMAIL_API_BASE, user_id, thread_id);
+        let url = format!("{GMAIL_API_BASE}/users/{user_id}/threads/{thread_id}");
         let response = client
             .get(&url)
             .send()
             .await
-            .context(format!("Failed to get thread {}", thread_id))?;
+            .context(format!("Failed to get thread {thread_id}"))?;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
@@ -266,15 +245,12 @@ pub async fn fetch_email_bodies(
                 .ok_or_else(|| anyhow::anyhow!("Message missing ID"))?;
 
             // Get full message details
-            let msg_url = format!(
-                "{}/users/{}/messages/{}",
-                GMAIL_API_BASE, user_id, message_id
-            );
+            let msg_url = format!("{GMAIL_API_BASE}/users/{user_id}/messages/{message_id}");
             let msg_response = client
                 .get(&msg_url)
                 .send()
                 .await
-                .context(format!("Failed to get message {}", message_id))?;
+                .context(format!("Failed to get message {message_id}"))?;
 
             if !msg_response.status().is_success() {
                 continue;
@@ -338,10 +314,7 @@ pub async fn download_attachment(
     let user_id = gmail_server.user_id();
 
     // Get the message
-    let url = format!(
-        "{}/users/{}/messages/{}",
-        GMAIL_API_BASE, user_id, message_id
-    );
+    let url = format!("{GMAIL_API_BASE}/users/{user_id}/messages/{message_id}");
     let response = client
         .get(&url)
         .send()
@@ -351,11 +324,7 @@ pub async fn download_attachment(
     let status = response.status();
     if !status.is_success() {
         let error_text = response.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!(
-            "Gmail API error: {} - {}",
-            status,
-            error_text
-        ));
+        return Err(anyhow::anyhow!("Gmail API error: {status} - {error_text}"));
     }
 
     let message: Value = response.json().await.context("Failed to parse message")?;
@@ -387,12 +356,11 @@ pub async fn download_attachment(
     }
 
     let (attachment_id, mime_type) = find_attachment(parts, filename)
-        .ok_or_else(|| anyhow::anyhow!("Attachment '{}' not found in message", filename))?;
+        .ok_or_else(|| anyhow::anyhow!("Attachment '{filename}' not found in message"))?;
 
     // Download the attachment
     let att_url = format!(
-        "{}/users/{}/messages/{}/attachments/{}",
-        GMAIL_API_BASE, user_id, message_id, attachment_id
+        "{GMAIL_API_BASE}/users/{user_id}/messages/{message_id}/attachments/{attachment_id}"
     );
 
     let att_response = client
@@ -405,9 +373,7 @@ pub async fn download_attachment(
     if !att_status.is_success() {
         let error_text = att_response.text().await.unwrap_or_default();
         return Err(anyhow::anyhow!(
-            "Gmail API error: {} - {}",
-            att_status,
-            error_text
+            "Gmail API error: {att_status} - {error_text}"
         ));
     }
 
@@ -461,10 +427,7 @@ pub async fn forward_email(
     let user_id = gmail_server.user_id();
 
     // Get the original message
-    let url = format!(
-        "{}/users/{}/messages/{}",
-        GMAIL_API_BASE, user_id, message_id
-    );
+    let url = format!("{GMAIL_API_BASE}/users/{user_id}/messages/{message_id}");
     let response = client
         .get(&url)
         .send()
@@ -474,11 +437,7 @@ pub async fn forward_email(
     let status = response.status();
     if !status.is_success() {
         let error_text = response.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!(
-            "Gmail API error: {} - {}",
-            status,
-            error_text
-        ));
+        return Err(anyhow::anyhow!("Gmail API error: {status} - {error_text}"));
     }
 
     let original_message: Value = response.json().await.context("Failed to parse message")?;
@@ -505,21 +464,21 @@ pub async fn forward_email(
     }
 
     // Build forwarded message
-    let mut message = format!("To: {}\r\n", to);
-    message.push_str(&format!("Subject: {}\r\n", subject));
+    let mut message = format!("To: {to}\r\n");
+    message.push_str(&format!("Subject: {subject}\r\n"));
     message.push_str("Content-Type: text/plain; charset=utf-8\r\n");
     message.push_str("\r\n");
     message.push_str(body);
     message.push_str("\r\n\r\n");
     message.push_str("---------- Forwarded message ----------\r\n");
     if let Some(from) = original_from {
-        message.push_str(&format!("From: {}\r\n", from));
+        message.push_str(&format!("From: {from}\r\n"));
     }
     if let Some(date) = original_date {
-        message.push_str(&format!("Date: {}\r\n", date));
+        message.push_str(&format!("Date: {date}\r\n"));
     }
     if let Some(subj) = original_subject {
-        message.push_str(&format!("Subject: {}\r\n", subj));
+        message.push_str(&format!("Subject: {subj}\r\n"));
     }
     message.push_str("\r\n");
 
@@ -531,7 +490,7 @@ pub async fn forward_email(
     let encoded_message = URL_SAFE.encode(message.as_bytes());
 
     // Send the message
-    let send_url = format!("{}/users/{}/messages/send", GMAIL_API_BASE, user_id);
+    let send_url = format!("{GMAIL_API_BASE}/users/{user_id}/messages/send");
     let send_payload = json!({
         "raw": encoded_message
     });
@@ -547,9 +506,7 @@ pub async fn forward_email(
     if !send_status.is_success() {
         let error_text = send_response.text().await.unwrap_or_default();
         return Err(anyhow::anyhow!(
-            "Gmail API error: {} - {}",
-            send_status,
-            error_text
+            "Gmail API error: {send_status} - {error_text}"
         ));
     }
 
@@ -567,10 +524,7 @@ pub async fn send_draft(gmail_server: &GmailServer, draft_id: &str) -> Result<Va
     let client = gmail_server.authenticated_client().await?;
     let user_id = gmail_server.user_id();
 
-    let url = format!(
-        "{}/users/{}/drafts/{}/send",
-        GMAIL_API_BASE, user_id, draft_id
-    );
+    let url = format!("{GMAIL_API_BASE}/users/{user_id}/drafts/{draft_id}/send");
 
     let payload = json!({});
 
@@ -584,11 +538,7 @@ pub async fn send_draft(gmail_server: &GmailServer, draft_id: &str) -> Result<Va
     let status = response.status();
     if !status.is_success() {
         let error_text = response.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!(
-            "Gmail API error: {} - {}",
-            status,
-            error_text
-        ));
+        return Err(anyhow::anyhow!("Gmail API error: {status} - {error_text}"));
     }
 
     let result: Value = response.json().await.context("Failed to parse response")?;

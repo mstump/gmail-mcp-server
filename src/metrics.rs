@@ -1,153 +1,158 @@
+use crate::oauth::OAuthToken;
 use metrics::gauge;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+const GAUGE_TOKEN_LAST_REFRESHED_TIMESTAMP: &str = "gmail_mcp_token_last_refreshed_timestamp";
 
 /// Prometheus metrics for OAuth token status
-/// Uses the metrics crate which routes to the global recorder (used by axum-prometheus)
 pub struct OAuthMetrics {
-    // Note: We don't store Gauge handles since metrics crate uses global registration
-    // The metrics are registered with the global recorder and can be accessed via the metrics crate
+    token_last_refreshed_timestamp: AtomicU64,
 }
 
 impl OAuthMetrics {
-    /// Create a new OAuthMetrics instance
-    /// Metrics are registered with the global metrics recorder, which will be picked up
-    /// by the Prometheus exporter (metrics-exporter-prometheus) used by axum-prometheus
     pub fn new() -> Self {
-        // Describe the metrics for better documentation in Prometheus
-        metrics::describe_gauge!(
-            "gmail_oauth_token_exists",
-            metrics::Unit::Count,
-            "Whether an OAuth token exists (1 if exists, 0 if not)"
-        );
-        metrics::describe_gauge!(
-            "gmail_oauth_token_expires_in",
-            metrics::Unit::Seconds,
-            "Seconds until the OAuth token expires"
-        );
-        metrics::describe_gauge!(
-            "gmail_oauth_token_expires_at",
-            metrics::Unit::Count,
-            "Unix timestamp when the OAuth token expires"
-        );
-
-        Self {}
-    }
-
-    /// Update metrics based on token state
-    /// Metrics are updated in the global recorder and will be included in Prometheus output
-    pub fn update_token_metrics(&self, token: Option<&crate::oauth::Token>) {
-        if let Some(token) = token {
-            gauge!("gmail_oauth_token_exists").set(1.0);
-            if let Some(expires_in) = token.expires_in {
-                gauge!("gmail_oauth_token_expires_in").set(expires_in as f64);
-            } else {
-                gauge!("gmail_oauth_token_expires_in").set(-1.0); // Use -1 to indicate "not set"
-            }
-            if let Some(expires_at) = token.expires_at {
-                gauge!("gmail_oauth_token_expires_at").set(expires_at as f64);
-            } else {
-                gauge!("gmail_oauth_token_expires_at").set(-1.0); // Use -1 to indicate "not set"
-            }
-        } else {
-            gauge!("gmail_oauth_token_exists").set(0.0);
-            gauge!("gmail_oauth_token_expires_in").set(-1.0);
-            gauge!("gmail_oauth_token_expires_at").set(-1.0);
+        gauge!(GAUGE_TOKEN_LAST_REFRESHED_TIMESTAMP).set(0.0);
+        Self {
+            token_last_refreshed_timestamp: AtomicU64::new(0),
         }
     }
-}
 
-impl Default for OAuthMetrics {
-    fn default() -> Self {
-        Self::new()
+    /// Update metrics with the current token state
+    pub fn update_token_metrics(&self, token: Option<&OAuthToken>) {
+        if let Some(token) = token {
+            self.token_last_refreshed_timestamp
+                .store(token.created_at, Ordering::Relaxed);
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::oauth::Token;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn test_oauth_metrics_creation() {
-        // Just verify OAuthMetrics can be created
-        // The metrics will be registered with the global recorder when it's installed
+    fn test_initial_metrics_state() {
         let metrics = OAuthMetrics::new();
-        drop(metrics);
+        // Initially, the gauges should be set to 0
+        assert_eq!(
+            metrics
+                .token_last_refreshed_timestamp
+                .load(Ordering::Relaxed),
+            0
+        );
     }
 
     #[test]
-    fn test_update_token_metrics_with_token() {
-        // Initialize a test recorder if one doesn't exist
-        use metrics_exporter_prometheus::PrometheusBuilder;
-        let handle = PrometheusBuilder::new()
-            .install_recorder()
-            .ok(); // It's ok if recorder is already installed
-
+    fn test_update_token_metrics_with_valid_token() {
         let metrics = OAuthMetrics::new();
-        let token = Token {
-            access_token: "test_token".to_string(),
-            refresh_token: None,
-            expires_in: Some(3600),
-            expires_at: Some(1234567890),
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let token = OAuthToken {
+            access_token: "test_access_token".to_string(),
+            token_type: "Bearer".to_string(),
+            expires_in: 3600,
+            refresh_token: Some("test_refresh_token".to_string()),
+            scope: "test_scope".to_string(),
+            created_at: now,
         };
 
-        // Verify the update doesn't panic
         metrics.update_token_metrics(Some(&token));
-
-        // If we have a handle, verify metrics are in the output
-        if let Some(handle) = handle {
-            let output = handle.render();
-            assert!(output.contains("gmail_oauth_token_exists"));
-            assert!(output.contains("gmail_oauth_token_expires_in"));
-            assert!(output.contains("gmail_oauth_token_expires_at"));
-        }
+        assert_eq!(
+            metrics
+                .token_last_refreshed_timestamp
+                .load(Ordering::Relaxed),
+            now
+        );
     }
 
     #[test]
-    fn test_update_token_metrics_without_token() {
-        // Initialize a test recorder if one doesn't exist
-        use metrics_exporter_prometheus::PrometheusBuilder;
-        let handle = PrometheusBuilder::new()
-            .install_recorder()
-            .ok(); // It's ok if recorder is already installed
-
+    fn test_update_token_metrics_with_none() {
         let metrics = OAuthMetrics::new();
-        // Verify the update doesn't panic
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        metrics
+            .token_last_refreshed_timestamp
+            .store(now, Ordering::Relaxed);
         metrics.update_token_metrics(None);
-
-        // If we have a handle, verify metrics are in the output
-        if let Some(handle) = handle {
-            let output = handle.render();
-            assert!(output.contains("gmail_oauth_token_exists"));
-            assert!(output.contains("gmail_oauth_token_expires_in"));
-            assert!(output.contains("gmail_oauth_token_expires_at"));
-        }
+        assert_eq!(
+            metrics
+                .token_last_refreshed_timestamp
+                .load(Ordering::Relaxed),
+            now
+        );
     }
 
     #[test]
-    fn test_update_token_metrics_with_partial_token() {
-        // Initialize a test recorder if one doesn't exist
-        use metrics_exporter_prometheus::PrometheusBuilder;
-        let handle = PrometheusBuilder::new()
-            .install_recorder()
-            .ok(); // It's ok if recorder is already installed
-
+    fn test_update_token_metrics_with_expired_token() {
         let metrics = OAuthMetrics::new();
-        let token = Token {
-            access_token: "test_token".to_string(),
-            refresh_token: None,
-            expires_in: Some(3600),
-            expires_at: None,
+        let past_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            - 4000;
+        let token = OAuthToken {
+            access_token: "test_access_token".to_string(),
+            token_type: "Bearer".to_string(),
+            expires_in: 3600,
+            refresh_token: Some("test_refresh_token".to_string()),
+            scope: "test_scope".to_string(),
+            created_at: past_time,
         };
 
-        // Verify the update doesn't panic
         metrics.update_token_metrics(Some(&token));
+        assert_eq!(
+            metrics
+                .token_last_refreshed_timestamp
+                .load(Ordering::Relaxed),
+            past_time
+        );
+    }
 
-        // If we have a handle, verify metrics are in the output
-        if let Some(handle) = handle {
-            let output = handle.render();
-            assert!(output.contains("gmail_oauth_token_exists"));
-            assert!(output.contains("gmail_oauth_token_expires_in"));
-            assert!(output.contains("gmail_oauth_token_expires_at"));
-        }
+    #[test]
+    fn test_update_token_metrics_updates_timestamp() {
+        let metrics = OAuthMetrics::new();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let token1 = OAuthToken {
+            access_token: "test_access_token1".to_string(),
+            token_type: "Bearer".to_string(),
+            expires_in: 3600,
+            refresh_token: Some("test_refresh_token".to_string()),
+            scope: "test_scope".to_string(),
+            created_at: now,
+        };
+
+        metrics.update_token_metrics(Some(&token1));
+        assert_eq!(
+            metrics
+                .token_last_refreshed_timestamp
+                .load(Ordering::Relaxed),
+            now
+        );
+
+        let new_time = now + 1000;
+        let token2 = OAuthToken {
+            access_token: "test_access_token2".to_string(),
+            token_type: "Bearer".to_string(),
+            expires_in: 3600,
+            refresh_token: Some("test_refresh_token".to_string()),
+            scope: "test_scope".to_string(),
+            created_at: new_time,
+        };
+        metrics.update_token_metrics(Some(&token2));
+        assert_eq!(
+            metrics
+                .token_last_refreshed_timestamp
+                .load(Ordering::Relaxed),
+            new_time
+        );
     }
 }

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use base64::{Engine, engine::general_purpose::URL_SAFE};
+use base64::{engine::general_purpose::URL_SAFE, Engine};
 
 /// Decode base64url-encoded email content
 pub fn decode_email_content(data: &str) -> Result<String> {

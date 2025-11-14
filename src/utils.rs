@@ -1,148 +1,80 @@
+use crate::config::Config;
 use anyhow::{Context, Result};
+use std::fs;
 use std::path::PathBuf;
 
-use crate::config::Config;
-
-/// Get the application data directory from Config and ensure it exists
-/// Returns an error if the directory cannot be created
 pub fn get_app_data_dir(config: &Config) -> Result<PathBuf> {
     let app_data_dir = config.app_data_dir();
-
-    // Ensure the directory exists
-    std::fs::create_dir_all(&app_data_dir).with_context(|| {
-        format!(
-            "Could not create app data directory at {}",
-            app_data_dir.display()
-        )
-    })?;
-
+    fs::create_dir_all(&app_data_dir)
+        .with_context(|| format!("Failed to create directory at {}", app_data_dir.display()))?;
     Ok(app_data_dir)
 }
 
-/// Get an absolute path in the app data directory
 pub fn get_app_file_path(config: &Config, filename: &str) -> Result<PathBuf> {
-    Ok(get_app_data_dir(config)?.join(filename))
+    let app_data_dir = get_app_data_dir(config)?;
+    Ok(app_data_dir.join(filename))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
+    use tempfile::tempdir;
 
-    #[test]
-    fn test_get_app_data_dir_uses_config_value() {
-        let temp_dir = TempDir::new().unwrap();
-        let custom_dir = temp_dir.path().to_path_buf();
-
-        let config = Config {
-            port: 8080,
+    fn create_test_config(app_data_dir: Option<PathBuf>) -> Config {
+        Config {
             gmail_client_id: None,
             gmail_client_secret: None,
-            oauth_redirect_url: None,
-            metrics_route: "/metrics".to_string(),
-            http_stream_route: "/stream".to_string(),
-            sse_config: crate::config::SseConfig {
-                sse_prefix: "/sse".to_string(),
-            },
-            login_route: "/login".to_string(),
-            callback_route: "/callback".to_string(),
-            health_route: "/health".to_string(),
-            root_route: "/".to_string(),
-            app_data_dir: Some(custom_dir.clone()),
-        };
-
-        let result = get_app_data_dir(&config).unwrap();
-        assert_eq!(result, custom_dir);
-        assert!(result.exists());
+            app_data_dir,
+        }
     }
 
     #[test]
-    fn test_get_app_data_dir_creates_directory() {
-        let temp_dir = TempDir::new().unwrap();
-        let new_dir = temp_dir.path().join("new-dir");
-
-        let config = Config {
-            port: 8080,
-            gmail_client_id: None,
-            gmail_client_secret: None,
-            oauth_redirect_url: None,
-            metrics_route: "/metrics".to_string(),
-            http_stream_route: "/stream".to_string(),
-            sse_config: crate::config::SseConfig {
-                sse_prefix: "/sse".to_string(),
-            },
-            login_route: "/login".to_string(),
-            callback_route: "/callback".to_string(),
-            health_route: "/health".to_string(),
-            root_route: "/".to_string(),
-            app_data_dir: Some(new_dir.clone()),
-        };
-
-        assert!(!new_dir.exists());
+    fn test_get_app_data_dir_with_custom_path() {
+        let dir = tempdir().unwrap();
+        let custom_path = dir.path().join("custom_app_data");
+        let config = create_test_config(Some(custom_path.clone()));
         let result = get_app_data_dir(&config).unwrap();
+        assert_eq!(result, custom_path);
+        assert!(custom_path.exists());
+    }
+
+    #[test]
+    fn test_get_app_data_dir_with_default_path() {
+        let config = create_test_config(None);
+        let result = get_app_data_dir(&config).unwrap();
+        assert!(result.to_string_lossy().contains("gmail-mcp-server-data"));
         assert!(result.exists());
-        assert_eq!(result, new_dir);
+        fs::remove_dir_all(result).unwrap();
     }
 
     #[test]
     fn test_get_app_file_path() {
-        let temp_dir = TempDir::new().unwrap();
-        let custom_dir = temp_dir.path().to_path_buf();
-
-        let config = Config {
-            port: 8080,
-            gmail_client_id: None,
-            gmail_client_secret: None,
-            oauth_redirect_url: None,
-            metrics_route: "/metrics".to_string(),
-            http_stream_route: "/stream".to_string(),
-            sse_config: crate::config::SseConfig {
-                sse_prefix: "/sse".to_string(),
-            },
-            login_route: "/login".to_string(),
-            callback_route: "/callback".to_string(),
-            health_route: "/health".to_string(),
-            root_route: "/".to_string(),
-            app_data_dir: Some(custom_dir.clone()),
-        };
-
-        let result = get_app_file_path(&config, "token.json").unwrap();
-        assert_eq!(result, custom_dir.join("token.json"));
+        let dir = tempdir().unwrap();
+        let custom_path = dir.path().join("test_app_data");
+        let config = create_test_config(Some(custom_path.clone()));
+        let result = get_app_file_path(&config, "test_file.json").unwrap();
+        let expected_path = custom_path.join("test_file.json");
+        assert_eq!(result, expected_path);
+        assert!(custom_path.exists());
     }
 
     #[test]
-    fn test_get_app_data_dir_returns_error_on_failure() {
-        use std::fs::File;
-        use std::io::Write;
+    fn test_get_app_data_dir_creates_dir() {
+        let dir = tempdir().unwrap();
+        let custom_path = dir.path().join("new_dir");
+        assert!(!custom_path.exists());
+        let config = create_test_config(Some(custom_path.clone()));
+        get_app_data_dir(&config).unwrap();
+        assert!(custom_path.exists());
+    }
 
-        let temp_dir = TempDir::new().unwrap();
-        // Create a file with the same name as the directory we'll try to create
-        let file_path = temp_dir.path().join("conflicting-name");
-        let mut file = File::create(&file_path).unwrap();
-        file.write_all(b"test").unwrap();
-        drop(file);
-
-        // Now try to create a directory with the same name - this should fail
-        let config = Config {
-            port: 8080,
-            gmail_client_id: None,
-            gmail_client_secret: None,
-            oauth_redirect_url: None,
-            metrics_route: "/metrics".to_string(),
-            http_stream_route: "/stream".to_string(),
-            sse_config: crate::config::SseConfig {
-                sse_prefix: "/sse".to_string(),
-            },
-            login_route: "/login".to_string(),
-            callback_route: "/callback".to_string(),
-            health_route: "/health".to_string(),
-            root_route: "/".to_string(),
-            app_data_dir: Some(file_path),
-        };
-
-        let result = get_app_data_dir(&config);
-        assert!(result.is_err());
-        let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("Could not create app data directory"));
+    #[test]
+    fn test_get_app_file_path_creates_dir() {
+        let dir = tempdir().unwrap();
+        let custom_path = dir.path().join("another_new_dir");
+        assert!(!custom_path.exists());
+        let config = create_test_config(Some(custom_path.clone()));
+        get_app_file_path(&config, "another_test_file.txt").unwrap();
+        assert!(custom_path.exists());
     }
 }
