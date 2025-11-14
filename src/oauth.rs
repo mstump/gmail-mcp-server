@@ -192,12 +192,14 @@ impl OAuthManager {
 
     pub async fn load_token(&self) -> Result<Option<OAuthToken>> {
         if self.token_file.exists() {
+            info!("🔑 Loading token from {}", self.token_file.display());
             let token_json =
                 fs::read_to_string(&self.token_file).context("Failed to read token file")?;
             let token: OAuthToken =
                 serde_json::from_str(&token_json).context("Failed to deserialize token")?;
             Ok(Some(token))
         } else {
+            info!("🔑 Token file not found at {}", self.token_file.display());
             Ok(None)
         }
     }
