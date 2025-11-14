@@ -150,7 +150,7 @@ The server also supports environment variables, which correspond to the CLI flag
 
 Create a `.env` file in the project root:
 
-```
+```bash
 # Required
 GMAIL_CLIENT_ID=your_client_id_here.apps.googleusercontent.com
 GMAIL_CLIENT_SECRET=your_client_secret_here
