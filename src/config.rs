@@ -12,6 +12,31 @@ pub struct Cli {
     pub config: Config,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct AuthConfig {
+    /// Login route path (defaults to /auth/login)
+    #[arg(long, env = "LOGIN_ROUTE", default_value = "/auth/login")]
+    pub login_route: String,
+
+    /// Token refresh route path (defaults to /auth/refresh)
+    #[arg(long, env = "REFRESH_ROUTE", default_value = "/auth/refresh")]
+    pub refresh_route: String,
+
+    /// OAuth callback route path (defaults to /auth/callback)
+    #[arg(long, env = "CALLBACK_ROUTE", default_value = "/auth/callback")]
+    pub callback_route: String,
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            login_route: "/auth/login".to_string(),
+            refresh_route: "/auth/refresh".to_string(),
+            callback_route: "/auth/callback".to_string(),
+        }
+    }
+}
+
 #[derive(Parser, Debug, Clone)]
 pub enum Commands {
     /// Run the HTTP server
@@ -49,13 +74,9 @@ pub struct HttpConfig {
     #[command(flatten)]
     pub sse_config: SseConfig,
 
-    /// Login route path (defaults to /login)
-    #[arg(long, env = "LOGIN_ROUTE", default_value = "/login")]
-    pub login_route: String,
-
-    /// OAuth callback route path (defaults to /callback)
-    #[arg(long, env = "CALLBACK_ROUTE", default_value = "/callback")]
-    pub callback_route: String,
+    /// Auth configuration
+    #[command(flatten)]
+    pub auth_config: AuthConfig,
 
     /// Health check route path (defaults to /health)
     #[arg(long, env = "HEALTH_ROUTE", default_value = "/health")]
@@ -163,8 +184,7 @@ impl Default for HttpConfig {
             http_stream_route: "/stream".to_string(),
             tools_route: "/tools".to_string(),
             sse_config: SseConfig::default(),
-            login_route: "/login".to_string(),
-            callback_route: "/callback".to_string(),
+            auth_config: AuthConfig::default(),
             health_route: "/health".to_string(),
             root_route: "/".to_string(),
         }
@@ -173,9 +193,12 @@ impl Default for HttpConfig {
 
 impl HttpConfig {
     pub fn oauth_redirect_url(&self) -> String {
-        self.oauth_redirect_url
-            .clone()
-            .unwrap_or_else(|| format!("http://localhost:{}/callback", self.port))
+        self.oauth_redirect_url.clone().unwrap_or_else(|| {
+            format!(
+                "http://localhost:{}{}",
+                self.port, self.auth_config.callback_route
+            )
+        })
     }
 
     pub fn metrics_route(&self) -> &str {
@@ -203,11 +226,16 @@ impl HttpConfig {
     }
 
     pub fn login_route(&self) -> &str {
-        &self.login_route
+        &self.auth_config.login_route
+    }
+
+    #[allow(dead_code)]
+    pub fn refresh_route(&self) -> &str {
+        &self.auth_config.refresh_route
     }
 
     pub fn callback_route(&self) -> &str {
-        &self.callback_route
+        &self.auth_config.callback_route
     }
 
     pub fn health_route(&self) -> &str {
@@ -263,7 +291,7 @@ mod tests {
         };
         assert_eq!(
             http_config.oauth_redirect_url(),
-            "http://localhost:3000/callback"
+            "http://localhost:3000/auth/callback"
         );
     }
 
@@ -275,7 +303,7 @@ mod tests {
         };
         assert_eq!(
             http_config.oauth_redirect_url(),
-            "http://localhost:9000/callback"
+            "http://localhost:9000/auth/callback"
         );
     }
 
@@ -297,7 +325,10 @@ mod tests {
     #[test]
     fn test_login_route_uses_configured_value() {
         let http_config = HttpConfig {
-            login_route: "/custom-login".to_string(),
+            auth_config: AuthConfig {
+                login_route: "/custom-login".to_string(),
+                ..Default::default()
+            },
             ..Default::default()
         };
         assert_eq!(http_config.login_route(), "/custom-login");
@@ -306,7 +337,43 @@ mod tests {
     #[test]
     fn test_login_route_falls_back_to_default() {
         let http_config = HttpConfig::default();
-        assert_eq!(http_config.login_route(), "/login");
+        assert_eq!(http_config.login_route(), "/auth/login");
+    }
+
+    #[test]
+    fn test_refresh_route_uses_configured_value() {
+        let http_config = HttpConfig {
+            auth_config: AuthConfig {
+                refresh_route: "/custom-refresh".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(http_config.refresh_route(), "/custom-refresh");
+    }
+
+    #[test]
+    fn test_refresh_route_falls_back_to_default() {
+        let http_config = HttpConfig::default();
+        assert_eq!(http_config.refresh_route(), "/auth/refresh");
+    }
+
+    #[test]
+    fn test_callback_route_uses_configured_value() {
+        let http_config = HttpConfig {
+            auth_config: AuthConfig {
+                callback_route: "/custom-callback".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(http_config.callback_route(), "/custom-callback");
+    }
+
+    #[test]
+    fn test_callback_route_falls_back_to_default() {
+        let http_config = HttpConfig::default();
+        assert_eq!(http_config.callback_route(), "/auth/callback");
     }
 
     #[test]

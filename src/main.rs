@@ -1,3 +1,4 @@
+mod auth;
 mod config;
 mod email;
 mod extract;
@@ -12,7 +13,7 @@ use anyhow::{Context, Result};
 use axum::{
     extract::{Query, State},
     http::{header, StatusCode},
-    response::{Html, IntoResponse, Redirect, Response},
+    response::{Html, IntoResponse, Response},
     routing::get,
     Json, Router,
 };
@@ -47,6 +48,7 @@ use crate::server::{
 };
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct CallbackQuery {
     code: Option<String>,
     error: Option<String>,
@@ -174,46 +176,6 @@ async fn run_http_server(config: Config, http_config: HttpConfig) -> Result<()> 
     // Initialize Gmail server without OAuth (lazy authentication)
     let gmail_server = Arc::new(gmail::GmailServer::new(&config)?);
 
-    info!(
-        "Starting Gmail MCP Server in HTTP mode on port {}...",
-        http_config.port
-    );
-    info!(
-        "✅ Server will run persistently at http://localhost:{}",
-        http_config.port
-    );
-    info!(
-        "   Visit http://localhost:{}{} to authenticate",
-        http_config.port,
-        http_config.login_route()
-    );
-    info!(
-        "   HTTP stream endpoint: http://localhost:{}{}",
-        http_config.port,
-        http_config.http_stream_route()
-    );
-    info!(
-        "   SSE endpoint: http://localhost:{}{}",
-        http_config.port,
-        http_config.sse_route()
-    );
-    info!(
-        "   POST endpoint: http://localhost:{}{}",
-        http_config.port,
-        http_config.sse_post_route()
-    );
-    info!(
-        "   Tools endpoint: http://localhost:{}{}",
-        http_config.port,
-        http_config.tools_route()
-    );
-    info!(
-        "   Metrics endpoint: http://localhost:{}{}",
-        http_config.port,
-        http_config.metrics_route()
-    );
-    info!("   (Use Ctrl+C to stop the server)");
-
     // Create OAuth manager
     let oauth_manager = Arc::new(oauth::OAuthManager::new(
         config.clone(),
@@ -278,8 +240,6 @@ async fn run_http_server(config: Config, http_config: HttpConfig) -> Result<()> 
     // Build HTTP server with routes
     let root_route = http_config.root_route();
     let metrics_route = http_config.metrics_route();
-    let login_route = http_config.login_route();
-    let callback_route = http_config.callback_route();
     let health_route = http_config.health_route();
     let tools_route = http_config.tools_route();
     let app_state = AppState {
@@ -320,8 +280,8 @@ async fn run_http_server(config: Config, http_config: HttpConfig) -> Result<()> 
         })
         .on_response(
             |response: &axum::http::Response<_>,
-             latency: std::time::Duration,
-             _span: &tracing::Span| {
+            latency: std::time::Duration,
+            _span: &tracing::Span| {
                 debug!(
                     "response status: {}, latency: {:?}",
                     response.status(),
@@ -333,10 +293,9 @@ async fn run_http_server(config: Config, http_config: HttpConfig) -> Result<()> 
 
     let app = Router::new()
         .route(root_route, get(root_handler))
-        .route(login_route, get(login_handler))
-        .route(callback_route, get(callback_handler))
         .route(health_route, get(health_handler))
         .route(metrics_route, get(metrics_handler))
+        .nest("/auth", auth::auth_router())
         .nest(tools_route, tools_router())
         .nest_service(sse_prefix, sse_router)
         .nest_service(http_stream_route, mcp_service)
@@ -357,6 +316,21 @@ async fn run_http_server(config: Config, http_config: HttpConfig) -> Result<()> 
         "📖 View server info: http://localhost:{}{}",
         http_config.port,
         http_config.root_route()
+    );
+    info!(
+        "🔑 Auth login: http://localhost:{}{}",
+        http_config.port,
+        http_config.login_route()
+    );
+    info!(
+        "↪️ Auth callback: http://localhost:{}{}",
+        http_config.port,
+        http_config.callback_route()
+    );
+    info!(
+        "🔄 Auth refresh: http://localhost:{}{}",
+        http_config.port,
+        http_config.refresh_route()
     );
     info!(
         "🔍 Health check: http://localhost:{}{}",
@@ -414,7 +388,7 @@ async fn run_http_server(config: Config, http_config: HttpConfig) -> Result<()> 
 }
 
 #[derive(Clone)]
-struct AppState {
+pub struct AppState {
     gmail_server: Arc<gmail::GmailServer>,
     oauth_manager: Arc<oauth::OAuthManager>,
     csrf_tokens: Arc<RwLock<std::collections::HashMap<String, String>>>,
@@ -424,7 +398,7 @@ struct AppState {
 }
 
 /// Render a template with placeholder replacements
-fn render_template(template: &str, replacements: &[(&str, &str)]) -> String {
+pub fn render_template(template: &str, replacements: &[(&str, &str)]) -> String {
     let mut result = template.to_string();
     for (placeholder, value) in replacements {
         result = result.replace(placeholder, value);
@@ -459,55 +433,6 @@ async fn root_handler(State(state): State<AppState>) -> Html<String> {
         ],
     );
     Html(html)
-}
-
-async fn login_handler(State(state): State<AppState>) -> Result<Redirect, StatusCode> {
-    let (auth_url, csrf_token) = state
-        .oauth_manager
-        .get_authorization_url()
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    // Store CSRF token
-    state
-        .csrf_tokens
-        .write()
-        .await
-        .insert(csrf_token.clone(), csrf_token);
-
-    Ok(Redirect::to(auth_url.as_str()))
-}
-
-async fn callback_handler(
-    State(state): State<AppState>,
-    Query(params): Query<CallbackQuery>,
-) -> Result<Html<String>, StatusCode> {
-    if let Some(error) = params.error {
-        let template = include_str!("../templates/error.html");
-        let html = render_template(
-            template,
-            &[
-                ("{error_message}", &error),
-                ("{login_route}", state.http_config.login_route()),
-            ],
-        );
-        return Ok(Html(html));
-    }
-
-    let code = params.code.ok_or(StatusCode::BAD_REQUEST)?;
-
-    match state.oauth_manager.exchange_code(&code).await {
-        Ok(token) => {
-            state.gmail_server.set_authenticated(true).await;
-            // Update metrics with the new token
-            state.metrics.update_token_metrics(Some(&token));
-            let template = include_str!("../templates/success.html");
-            Ok(Html(template.to_string()))
-        }
-        Err(e) => {
-            error!("Failed to exchange authorization code: {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
 }
 
 async fn health_handler() -> impl IntoResponse {
@@ -580,14 +505,10 @@ async fn extract_attachment_by_filename_handler(
     State(state): State<AppState>,
     Query(params): Query<ExtractAttachmentArgs>,
 ) -> Result<Json<Value>, (StatusCode, String)> {
-    tools::extract_attachment_by_filename(
-        &state.gmail_server,
-        &params.message_id,
-        &params.filename,
-    )
-    .await
-    .map(Json)
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    tools::extract_attachment_by_filename(&state.gmail_server, &params.message_id, &params.filename)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 async fn fetch_email_bodies_handler(
@@ -762,8 +683,11 @@ mod tests {
             sse_config: config::SseConfig {
                 sse_prefix: "/custom-sse".to_string(),
             },
-            login_route: "/custom-login".to_string(),
-            callback_route: "/custom-callback".to_string(),
+            auth_config: config::AuthConfig {
+                login_route: "/custom-login".to_string(),
+                callback_route: "/custom-callback".to_string(),
+                refresh_route: "/custom-refresh".to_string(),
+            },
             health_route: "/custom-health".to_string(),
             root_route: "/custom-root".to_string(),
             tools_route: "/custom-tools".to_string(),
@@ -792,6 +716,7 @@ mod tests {
         assert_eq!(app_state.http_config.root_route(), "/custom-root");
         assert_eq!(app_state.http_config.login_route(), "/custom-login");
         assert_eq!(app_state.http_config.callback_route(), "/custom-callback");
+        assert_eq!(app_state.http_config.refresh_route(), "/custom-refresh");
         assert_eq!(app_state.http_config.health_route(), "/custom-health");
         assert_eq!(app_state.http_config.metrics_route(), "/custom-metrics");
         assert_eq!(app_state.http_config.http_stream_route(), "/custom-stream");

@@ -30,8 +30,8 @@ impl GmailServer {
     }
 
     #[allow(dead_code)]
-    pub fn is_authenticated(&self) -> bool {
-        *self.authenticated.blocking_lock()
+    pub async fn is_authenticated(&self) -> bool {
+        *self.authenticated.lock().await
     }
 
     pub async fn set_authenticated(&self, auth: bool) {
@@ -88,7 +88,7 @@ mod tests {
         let config = create_test_config();
         let server = GmailServer::new(&config).unwrap();
         assert_eq!(server.user_id(), "me");
-        assert!(!server.is_authenticated());
+        assert!(!server.is_authenticated().await);
     }
 
     #[tokio::test]
@@ -96,7 +96,7 @@ mod tests {
         let config = create_test_config();
         let server = GmailServer::new(&config).unwrap();
         server.set_authenticated(true).await;
-        assert!(server.is_authenticated());
+        assert!(server.is_authenticated().await);
     }
 
     #[tokio::test]

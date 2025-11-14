@@ -1,3 +1,4 @@
+use crate::gmail::GmailServer;
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::*,
@@ -8,8 +9,6 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::error;
-
-use crate::gmail::GmailServer;
 
 #[derive(Clone)]
 pub struct GmailMcpServer {
