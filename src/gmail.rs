@@ -16,12 +16,7 @@ pub struct GmailServer {
 }
 
 impl GmailServer {
-    pub fn new(config: &Config) -> Result<Self> {
-        let oauth_manager = Arc::new(oauth::OAuthManager::new(
-            config.clone(),
-            HttpConfig::default(),
-        )?);
-
+    pub fn new(oauth_manager: Arc<oauth::OAuthManager>) -> Result<Self> {
         Ok(Self {
             user_id: "me".to_string(),
             authenticated: Arc::new(Mutex::new(false)),
@@ -86,7 +81,10 @@ mod tests {
     #[tokio::test]
     async fn test_gmail_server_new() {
         let config = create_test_config();
-        let server = GmailServer::new(&config).unwrap();
+        let oauth_manager = Arc::new(
+            oauth::OAuthManager::new(config.clone(), HttpConfig::default()).unwrap(),
+        );
+        let server = GmailServer::new(oauth_manager).unwrap();
         assert_eq!(server.user_id(), "me");
         assert!(!server.is_authenticated().await);
     }
@@ -94,7 +92,10 @@ mod tests {
     #[tokio::test]
     async fn test_set_authenticated() {
         let config = create_test_config();
-        let server = GmailServer::new(&config).unwrap();
+        let oauth_manager = Arc::new(
+            oauth::OAuthManager::new(config.clone(), HttpConfig::default()).unwrap(),
+        );
+        let server = GmailServer::new(oauth_manager).unwrap();
         server.set_authenticated(true).await;
         assert!(server.is_authenticated().await);
     }
@@ -102,7 +103,10 @@ mod tests {
     #[tokio::test]
     async fn test_authenticated_client_not_authenticated() {
         let config = create_test_config();
-        let server = GmailServer::new(&config).unwrap();
+        let oauth_manager = Arc::new(
+            oauth::OAuthManager::new(config.clone(), HttpConfig::default()).unwrap(),
+        );
+        let server = GmailServer::new(oauth_manager).unwrap();
         let result = server.authenticated_client().await;
         assert!(result.is_err());
     }
@@ -110,7 +114,10 @@ mod tests {
     #[tokio::test]
     async fn test_authenticated_client_authenticated_no_token() {
         let config = create_test_config();
-        let server = GmailServer::new(&config).unwrap();
+        let oauth_manager = Arc::new(
+            oauth::OAuthManager::new(config.clone(), HttpConfig::default()).unwrap(),
+        );
+        let server = GmailServer::new(oauth_manager).unwrap();
         server.set_authenticated(true).await;
         let result = server.authenticated_client().await;
         assert!(result.is_err());
@@ -119,7 +126,10 @@ mod tests {
     #[tokio::test]
     async fn test_check_authentication_not_authenticated() {
         let config = create_test_config();
-        let server = GmailServer::new(&config).unwrap();
+        let oauth_manager = Arc::new(
+            oauth::OAuthManager::new(config.clone(), HttpConfig::default()).unwrap(),
+        );
+        let server = GmailServer::new(oauth_manager).unwrap();
         let result = server.check_authentication().await;
         assert!(result.is_err());
     }
@@ -127,8 +137,6 @@ mod tests {
     #[tokio::test]
     async fn test_check_authentication_authenticated() {
         let config = create_test_config();
-        let server = GmailServer::new(&config).unwrap();
-        server.set_authenticated(true).await;
         let oauth_manager =
             oauth::OAuthManager::new(config.clone(), HttpConfig::default()).unwrap();
         let token = oauth::OAuthToken {

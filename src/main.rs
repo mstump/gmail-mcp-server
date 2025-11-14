@@ -108,7 +108,16 @@ async fn main() -> Result<()> {
 }
 
 async fn run_tools(config: Config, tool: ToolsCmd) -> Result<()> {
-    let gmail_server = Arc::new(gmail::GmailServer::new(&config)?);
+    let oauth_manager = Arc::new(oauth::OAuthManager::new(config.clone(), HttpConfig::default())?);
+    if let Ok(Some(token)) = oauth_manager.load_token().await {
+        oauth_manager.set_token(token).await;
+    } else {
+        return Err(anyhow::anyhow!("Not authenticated. Please run the http command and login first."));
+    }
+
+    let gmail_server = Arc::new(gmail::GmailServer::new(oauth_manager)?);
+    gmail_server.set_authenticated(true).await;
+
     let result = match tool {
         ToolsCmd::SearchThreads { query, max_results } => {
             tools::search_threads(&gmail_server, &query, max_results).await
@@ -173,9 +182,6 @@ async fn run_http_server(config: Config, http_config: HttpConfig) -> Result<()> 
     info!("📁 App data directory: {}", app_data_dir.display());
     info!("🔑 Token file: {}", token_file.display());
 
-    // Initialize Gmail server without OAuth (lazy authentication)
-    let gmail_server = Arc::new(gmail::GmailServer::new(&config)?);
-
     // Create OAuth manager
     let oauth_manager = Arc::new(oauth::OAuthManager::new(
         config.clone(),
@@ -189,6 +195,8 @@ async fn run_http_server(config: Config, http_config: HttpConfig) -> Result<()> 
     // Create OAuth metrics - they will automatically use the global recorder installed by axum-prometheus
     let oauth_metrics = Arc::new(metrics::OAuthMetrics::new());
 
+    let gmail_server = Arc::new(gmail::GmailServer::new(oauth_manager.clone())?);
+
     // Store CSRF tokens temporarily (in production, use Redis or similar)
     let csrf_tokens: Arc<RwLock<std::collections::HashMap<String, String>>> =
         Arc::new(RwLock::new(std::collections::HashMap::new()));
@@ -197,6 +205,9 @@ async fn run_http_server(config: Config, http_config: HttpConfig) -> Result<()> 
     if let Some(token) = oauth_manager.load_token().await? {
         oauth_manager.set_token(token.clone()).await;
         oauth_metrics.update_token_metrics(Some(&token));
+        if !token.is_expired() {
+            gmail_server.set_authenticated(true).await;
+        }
     } else {
         oauth_metrics.update_token_metrics(None);
     }
@@ -701,11 +712,12 @@ mod tests {
         let prometheus_handle = PrometheusBuilder::new()
             .install_recorder()
             .expect("Failed to install Prometheus recorder");
+        let oauth_manager = Arc::new(
+            oauth::OAuthManager::new(config.clone(), http_config.clone()).unwrap(),
+        );
         let app_state = AppState {
-            gmail_server: Arc::new(gmail::GmailServer::new(&config).unwrap()),
-            oauth_manager: Arc::new(
-                oauth::OAuthManager::new(config.clone(), http_config.clone()).unwrap(),
-            ),
+            gmail_server: Arc::new(gmail::GmailServer::new(oauth_manager.clone()).unwrap()),
+            oauth_manager,
             csrf_tokens: Arc::new(RwLock::new(HashMap::new())),
             metrics: Arc::new(metrics::OAuthMetrics::new()),
             prometheus_handle,
