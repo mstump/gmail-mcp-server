@@ -3,7 +3,6 @@ use reqwest::Client;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::config::{Config, HttpConfig};
 use crate::oauth;
 
 pub const GMAIL_API_BASE: &str = "https://gmail.googleapis.com/gmail/v1";
@@ -69,6 +68,7 @@ impl GmailServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{Config, HttpConfig};
 
     fn create_test_config() -> Config {
         Config {
