@@ -41,6 +41,10 @@ pub struct HttpConfig {
     #[arg(long, env = "HTTP_STREAM_ROUTE", default_value = "/stream")]
     pub http_stream_route: String,
 
+    /// Tools route path (defaults to /tools)
+    #[arg(long, env = "TOOLS_ROUTE", default_value = "/tools")]
+    pub tools_route: String,
+
     /// SSE configuration
     #[command(flatten)]
     pub sse_config: SseConfig,
@@ -157,6 +161,7 @@ impl Default for HttpConfig {
             oauth_redirect_url: None,
             metrics_route: "/metrics".to_string(),
             http_stream_route: "/stream".to_string(),
+            tools_route: "/tools".to_string(),
             sse_config: SseConfig::default(),
             login_route: "/login".to_string(),
             callback_route: "/callback".to_string(),
@@ -179,6 +184,10 @@ impl HttpConfig {
 
     pub fn http_stream_route(&self) -> &str {
         &self.http_stream_route
+    }
+
+    pub fn tools_route(&self) -> &str {
+        &self.tools_route
     }
 
     pub fn sse_route(&self) -> &str {
@@ -331,6 +340,21 @@ mod tests {
     fn test_http_stream_route_falls_back_to_default() {
         let http_config = HttpConfig::default();
         assert_eq!(http_config.http_stream_route(), "/stream");
+    }
+
+    #[test]
+    fn test_tools_route_uses_configured_value() {
+        let http_config = HttpConfig {
+            tools_route: "/custom-tools".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(http_config.tools_route(), "/custom-tools");
+    }
+
+    #[test]
+    fn test_tools_route_falls_back_to_default() {
+        let http_config = HttpConfig::default();
+        assert_eq!(http_config.tools_route(), "/tools");
     }
 
     #[test]

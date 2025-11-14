@@ -14,7 +14,7 @@ use axum::{
     http::{header, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     routing::get,
-    Router,
+    Json, Router,
 };
 use axum_prometheus::PrometheusMetricLayer;
 
@@ -31,6 +31,7 @@ use rmcp::transport::streamable_http_server::{
 };
 use rmcp::transport::{sse_server::SseServerConfig, SseServer};
 use serde::Deserialize;
+use serde_json::Value;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -39,6 +40,11 @@ use tokio_util::sync::CancellationToken;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, trace, Level};
+
+use crate::server::{
+    CreateDraftArgs, DownloadAttachmentArgs, ExtractAttachmentArgs, FetchEmailBodiesArgs,
+    ForwardEmailArgs, SearchThreadsArgs, SendDraftArgs,
+};
 
 #[derive(Deserialize)]
 struct CallbackQuery {
@@ -197,6 +203,11 @@ async fn run_http_server(config: Config, http_config: HttpConfig) -> Result<()> 
         http_config.sse_post_route()
     );
     info!(
+        "   Tools endpoint: http://localhost:{}{}",
+        http_config.port,
+        http_config.tools_route()
+    );
+    info!(
         "   Metrics endpoint: http://localhost:{}{}",
         http_config.port,
         http_config.metrics_route()
@@ -270,6 +281,7 @@ async fn run_http_server(config: Config, http_config: HttpConfig) -> Result<()> 
     let login_route = http_config.login_route();
     let callback_route = http_config.callback_route();
     let health_route = http_config.health_route();
+    let tools_route = http_config.tools_route();
     let app_state = AppState {
         gmail_server: gmail_server.clone(),
         oauth_manager: oauth_manager.clone(),
@@ -325,6 +337,7 @@ async fn run_http_server(config: Config, http_config: HttpConfig) -> Result<()> 
         .route(callback_route, get(callback_handler))
         .route(health_route, get(health_handler))
         .route(metrics_route, get(metrics_handler))
+        .nest(tools_route, tools_router())
         .nest_service(sse_prefix, sse_router)
         .nest_service(http_stream_route, mcp_service)
         .layer(axum::middleware::from_fn(log_request_body))
@@ -371,6 +384,11 @@ async fn run_http_server(config: Config, http_config: HttpConfig) -> Result<()> 
         http_config.port,
         http_config.sse_prefix(),
         http_config.sse_post_route()
+    );
+    info!(
+        "🛠️ Tools endpoint: http://localhost:{}{}",
+        http_config.port,
+        http_config.tools_route()
     );
 
     // Handle signals for graceful shutdown
@@ -435,6 +453,7 @@ async fn root_handler(State(state): State<AppState>) -> Html<String> {
             ("{health_route}", state.http_config.health_route()),
             ("{metrics_route}", state.http_config.metrics_route()),
             ("{http_stream_route}", state.http_config.http_stream_route()),
+            ("{tools_route}", state.http_config.tools_route()),
             ("{sse_route}", &sse_route_full),
             ("{sse_post_route}", &sse_post_route_full),
         ],
@@ -513,6 +532,115 @@ async fn metrics_handler(State(state): State<AppState>) -> Result<Response<Strin
     Ok(response)
 }
 
+fn tools_router() -> Router<AppState> {
+    Router::new()
+        .route("/search_threads", get(search_threads_handler))
+        .route("/create_draft", get(create_draft_handler))
+        .route(
+            "/extract_attachment_by_filename",
+            get(extract_attachment_by_filename_handler),
+        )
+        .route("/fetch_email_bodies", get(fetch_email_bodies_handler))
+        .route("/download_attachment", get(download_attachment_handler))
+        .route("/forward_email", get(forward_email_handler))
+        .route("/send_draft", get(send_draft_handler))
+}
+
+async fn search_threads_handler(
+    State(state): State<AppState>,
+    Query(params): Query<SearchThreadsArgs>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    tools::search_threads(
+        &state.gmail_server,
+        &params.query,
+        params.max_results.unwrap_or(10),
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+async fn create_draft_handler(
+    State(state): State<AppState>,
+    Query(params): Query<CreateDraftArgs>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    tools::create_draft(
+        &state.gmail_server,
+        &params.to,
+        &params.subject,
+        &params.body,
+        params.thread_id.as_deref(),
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+async fn extract_attachment_by_filename_handler(
+    State(state): State<AppState>,
+    Query(params): Query<ExtractAttachmentArgs>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    tools::extract_attachment_by_filename(
+        &state.gmail_server,
+        &params.message_id,
+        &params.filename,
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+async fn fetch_email_bodies_handler(
+    State(state): State<AppState>,
+    Query(params): Query<FetchEmailBodiesArgs>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    tools::fetch_email_bodies(&state.gmail_server, &params.thread_ids)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+async fn download_attachment_handler(
+    State(state): State<AppState>,
+    Query(params): Query<DownloadAttachmentArgs>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    tools::download_attachment(
+        &state.gmail_server,
+        &params.message_id,
+        &params.filename,
+        params.download_dir.as_deref(),
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+async fn forward_email_handler(
+    State(state): State<AppState>,
+    Query(params): Query<ForwardEmailArgs>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    tools::forward_email(
+        &state.gmail_server,
+        &params.message_id,
+        &params.to,
+        &params.subject,
+        &params.body,
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+async fn send_draft_handler(
+    State(state): State<AppState>,
+    Query(params): Query<SendDraftArgs>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    tools::send_draft(&state.gmail_server, &params.draft_id)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -573,6 +701,7 @@ mod tests {
                 ("{health_route}", "/health"),
                 ("{metrics_route}", "/metrics"),
                 ("{http_stream_route}", "/stream"),
+                ("{tools_route}", "/tools"),
                 ("{sse_route}", "/sse"),
                 ("{sse_post_route}", "/message"),
             ],
@@ -600,6 +729,7 @@ mod tests {
                 ("{health_route}", "/status/health"),
                 ("{metrics_route}", "/prometheus/metrics"),
                 ("{http_stream_route}", "/api/stream"),
+                ("{tools_route}", "/api/tools"),
                 ("{sse_route}", "/api/sse"),
                 ("{sse_post_route}", "/api/message"),
             ],
@@ -636,6 +766,7 @@ mod tests {
             callback_route: "/custom-callback".to_string(),
             health_route: "/custom-health".to_string(),
             root_route: "/custom-root".to_string(),
+            tools_route: "/custom-tools".to_string(),
             ..Default::default()
         };
 
@@ -666,5 +797,6 @@ mod tests {
         assert_eq!(app_state.http_config.http_stream_route(), "/custom-stream");
         assert_eq!(app_state.http_config.sse_route(), "/sse");
         assert_eq!(app_state.http_config.sse_post_route(), "/message");
+        assert_eq!(app_state.http_config.tools_route(), "/custom-tools");
     }
 }

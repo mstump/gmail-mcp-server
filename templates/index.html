@@ -39,6 +39,9 @@
     <div class="endpoint">
         <strong>POST {sse_post_route}</strong> - POST message endpoint for SSE
     </div>
+    <div class="endpoint">
+        <strong>GET {tools_route}</strong> - Tools endpoint
+    </div>
 
     <h2>Getting Started:</h2>
     <ol>
@@ -48,6 +51,39 @@
     </ol>
 
     <p><em>Note: This server implements the Model Context Protocol (MCP) for Gmail integration.</em></p>
+
+    <h3>Example Usage</h3>
+    <p>
+      To send a message using the HTTP stream endpoint, you can use the following cURL command:
+    </p>
+    <pre
+      style="
+        background-color: #f4f4f4;
+        padding: 1rem;
+        border-radius: 5px;
+        overflow-x: auto;
+      "
+    >
+      <code
+        >curl -X POST -H "Content-Type: application/json" -d '{{ "tool":
+        "search_threads", "query": "from:hello@example.com" }}'
+        http://localhost:3000{http_stream_route}</code
+      >
+    </pre>
+    <p>Or using the tools endpoint:</p>
+    <pre
+      style="
+        background-color: #f4f4f4;
+        padding: 1rem;
+        border-radius: 5px;
+        overflow-x: auto;
+      "
+    >
+      <code
+        >curl "http://localhost:3000/tools/search_threads?query=from:hello@example.com"</code
+      >
+    </pre>
+  </div>
 </body>
 </html>
 
